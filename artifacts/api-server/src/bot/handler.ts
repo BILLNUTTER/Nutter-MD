@@ -23,7 +23,6 @@ import {
   handleAntimention,
   handleBan,
   handleUnban,
-  ensureGroupSettings,
 } from "./commands/group";
 
 const BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
@@ -31,13 +30,14 @@ const URL_REGEX = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|t\.me\/[^\s]+/gi;
 
 export interface CommandContext {
   isOwner: boolean;
-  isGroupAdmin: boolean;
+  isSenderGroupAdmin: boolean;
+  isBotGroupAdmin: boolean;
   groupSettings: GroupSettings | null;
 }
 
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
   const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/[^0-9]/g, "");
-  const prefix = process.env["PREFIX"] || ".";
+  const defaultPrefix = process.env["PREFIX"] || ".";
 
   const jid = msg.key.remoteJid;
   if (!jid) return;
@@ -57,23 +57,33 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   if (!body) return;
 
   let groupSettings: GroupSettings | null = null;
-  let isGroupAdmin = false;
+  let isSenderGroupAdmin = false;
+  let isBotGroupAdmin = false;
+  let prefix = defaultPrefix;
 
   if (isGroup) {
     try {
-      const settings = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, jid)).limit(1);
-      groupSettings = settings[0] ?? null;
+      const rows = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, jid)).limit(1);
+      groupSettings = rows[0] ?? null;
+
+      if (groupSettings?.customPrefix) {
+        prefix = groupSettings.customPrefix;
+      }
 
       const groupMeta = await sock.groupMetadata(jid);
       const botJid = sock.user?.id || "";
       const botNumber = botJid.split(":")[0].split("@")[0];
       const senderNum = senderJid.split("@")[0];
-      isGroupAdmin = groupMeta.participants.some(
-        (p) => (p.id.split("@")[0] === senderNum || p.id.split("@")[0] === botNumber) && (p.admin === "admin" || p.admin === "superadmin")
-      );
+
+      for (const participant of groupMeta.participants) {
+        const participantNumber = participant.id.split("@")[0];
+        const isAdmin = participant.admin === "admin" || participant.admin === "superadmin";
+        if (participantNumber === senderNum && isAdmin) isSenderGroupAdmin = true;
+        if (participantNumber === botNumber && isAdmin) isBotGroupAdmin = true;
+      }
 
       if (groupSettings) {
-        if (groupSettings.antilink && !isOwner && !isGroupAdmin && URL_REGEX.test(body)) {
+        if (groupSettings.antilink && !isOwner && !isSenderGroupAdmin && URL_REGEX.test(body)) {
           await sock.sendMessage(jid, { delete: msg.key });
           await sock.sendMessage(jid, { text: "Links are not allowed in this group." });
           return;
@@ -83,7 +93,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
           await sock.sendMessage(jid, { text: "Bad language is not allowed." });
           return;
         }
-        if (groupSettings.antimention && !isOwner && !isGroupAdmin) {
+        if (groupSettings.antimention && !isOwner && !isSenderGroupAdmin) {
           const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           if (mentions.length >= 5) {
             await sock.sendMessage(jid, { delete: msg.key });
@@ -105,9 +115,11 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       await sock.sendMessage(jid, { text: "You are banned from using this bot." });
       return;
     }
-  } catch (_) {}
+  } catch (_err) {
+    // Non-fatal: continue if DB check fails
+  }
 
-  const ctx: CommandContext = { isOwner, isGroupAdmin, groupSettings };
+  const ctx: CommandContext = { isOwner, isSenderGroupAdmin, isBotGroupAdmin, groupSettings };
   const commandText = body.slice(prefix.length).trim();
   const [command, ...args] = commandText.split(" ");
   const cmd = command.toLowerCase();
@@ -117,9 +129,9 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   switch (cmd) {
     case "ping": return handlePing(sock, msg, ctx);
     case "alive": return handleAlive(sock, msg, ctx);
-    case "menu": return handleMenu(sock, msg, ctx);
+    case "menu": return handleMenu(sock, msg, ctx, prefix);
     case "owner": return handleOwner(sock, msg, ctx);
-    case "settings": return handleSettings(sock, msg, ctx);
+    case "settings": return handleSettings(sock, msg, ctx, prefix);
     case "sticker": return handleSticker(sock, msg, ctx);
     case "restart": return handleRestart(sock, msg, ctx);
     case "kick": return handleKick(sock, msg, ctx);

@@ -1,7 +1,7 @@
 import type { WASocket, proto } from "@whiskeysockets/baileys";
 import type { CommandContext } from "../handler";
 import { db } from "@workspace/db";
-import { groupSettingsTable } from "@workspace/db/schema";
+import { groupSettingsTable, userSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 
@@ -19,8 +19,12 @@ async function updateGroupSetting(groupId: string, update: Partial<typeof groupS
 }
 
 export async function handleKick(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isBotGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "This command requires bot admin privileges." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can kick members." });
     return;
   }
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -38,8 +42,12 @@ export async function handleKick(sock: WASocket, msg: proto.IWebMessageInfo, ctx
 }
 
 export async function handleAdd(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isBotGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "This command requires bot admin privileges." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can add members." });
     return;
   }
   const number = args[0]?.replace(/[^0-9]/g, "");
@@ -58,8 +66,12 @@ export async function handleAdd(sock: WASocket, msg: proto.IWebMessageInfo, ctx:
 }
 
 export async function handlePromote(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isBotGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Bot must be admin to use this command." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can promote members." });
     return;
   }
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -72,8 +84,12 @@ export async function handlePromote(sock: WASocket, msg: proto.IWebMessageInfo, 
 }
 
 export async function handleDemote(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isBotGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Bot must be admin to use this command." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can demote members." });
     return;
   }
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -86,7 +102,7 @@ export async function handleDemote(sock: WASocket, msg: proto.IWebMessageInfo, c
 }
 
 export async function handleAntilink(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can use this." });
     return;
   }
@@ -97,7 +113,7 @@ export async function handleAntilink(sock: WASocket, msg: proto.IWebMessageInfo,
 }
 
 export async function handleAntibadword(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can use this." });
     return;
   }
@@ -108,7 +124,7 @@ export async function handleAntibadword(sock: WASocket, msg: proto.IWebMessageIn
 }
 
 export async function handleAntimention(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
-  if (!ctx.isGroupAdmin) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Only group admins can use this." });
     return;
   }
@@ -119,7 +135,7 @@ export async function handleAntimention(sock: WASocket, msg: proto.IWebMessageIn
 }
 
 export async function handleBan(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
-  if (!ctx.isOwner && !ctx.isGroupAdmin) {
+  if (!ctx.isOwner && !ctx.isSenderGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Only admins can ban users." });
     return;
   }
@@ -129,7 +145,6 @@ export async function handleBan(sock: WASocket, msg: proto.IWebMessageInfo, ctx:
     return;
   }
 
-  const { userSettingsTable } = await import("@workspace/db/schema");
   for (const jid of mentioned) {
     await db.insert(userSettingsTable).values({ userId: jid, isBanned: true })
       .onConflictDoUpdate({ target: userSettingsTable.userId, set: { isBanned: true, updatedAt: new Date() } });
@@ -138,7 +153,7 @@ export async function handleBan(sock: WASocket, msg: proto.IWebMessageInfo, ctx:
 }
 
 export async function handleUnban(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
-  if (!ctx.isOwner && !ctx.isGroupAdmin) {
+  if (!ctx.isOwner && !ctx.isSenderGroupAdmin) {
     await sock.sendMessage(msg.key.remoteJid!, { text: "Only admins can unban users." });
     return;
   }
@@ -148,7 +163,6 @@ export async function handleUnban(sock: WASocket, msg: proto.IWebMessageInfo, ct
     return;
   }
 
-  const { userSettingsTable } = await import("@workspace/db/schema");
   for (const jid of mentioned) {
     await db.update(userSettingsTable).set({ isBanned: false, updatedAt: new Date() }).where(eq(userSettingsTable.userId, jid));
   }

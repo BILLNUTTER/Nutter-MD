@@ -1,1 +1,1 @@
-worker: node dist/bot-standalone.js
+web: node --enable-source-maps dist/index.mjs

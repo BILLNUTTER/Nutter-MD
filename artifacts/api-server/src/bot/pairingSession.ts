@@ -1,7 +1,6 @@
 import { Boom } from "@hapi/boom";
 import { logger } from "../lib/logger";
-import type { AuthState } from "./session";
-import { encodeSessionToBase64 } from "./session";
+import { encodeSessionToBase64, type SessionFileMap } from "./session";
 
 export type PairingStatus =
   | "idle"
@@ -18,7 +17,6 @@ export interface PairingSessionState {
   qrDataUrl: string | null;
   qrExpiresAt: Date | null;
   sessionId: string | null;
-  authState: AuthState | null;
 }
 
 export const pairingState: PairingSessionState = {
@@ -28,7 +26,6 @@ export const pairingState: PairingSessionState = {
   qrDataUrl: null,
   qrExpiresAt: null,
   sessionId: null,
-  authState: null,
 };
 
 export function resetPairingState() {
@@ -38,7 +35,6 @@ export function resetPairingState() {
   pairingState.qrDataUrl = null;
   pairingState.qrExpiresAt = null;
   pairingState.sessionId = null;
-  pairingState.authState = null;
 }
 
 let activePairingSocket: unknown = null;
@@ -82,13 +78,12 @@ export async function startPairingSession(phoneNumber: string): Promise<string> 
       await saveCreds();
       try {
         const files = fs.readdirSync(sessionDir);
-        const creds: Record<string, unknown> = {};
+        const fileMap: SessionFileMap = {};
         for (const file of files) {
           const content = fs.readFileSync(path.join(sessionDir, file), "utf-8");
-          creds[file] = JSON.parse(content);
+          fileMap[file] = JSON.parse(content);
         }
-        pairingState.authState = creds as unknown as AuthState;
-        pairingState.sessionId = encodeSessionToBase64(creds as unknown as AuthState);
+        pairingState.sessionId = encodeSessionToBase64(fileMap);
       } catch (err) {
         logger.error({ err }, "Failed to serialize credentials");
       }

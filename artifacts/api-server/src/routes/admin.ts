@@ -9,7 +9,7 @@ const REPO_NAME = "NUTTER-XMD";
 function requireAdminPassword(req: Parameters<Parameters<typeof router.use>[0]>[0], res: Parameters<Parameters<typeof router.use>[0]>[1], next: Parameters<Parameters<typeof router.use>[0]>[2]) {
   const adminPassword = process.env["ADMIN_PASSWORD"];
   if (!adminPassword) {
-    next();
+    res.status(503).json({ error: "MISCONFIGURED", message: "ADMIN_PASSWORD environment variable is not set. Configure it to enable the admin dashboard." });
     return;
   }
   const provided = req.headers["x-admin-password"];

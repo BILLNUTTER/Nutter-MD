@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Github, Rocket, Search, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react";
-import { useVerifyFork } from "@workspace/api-client-react";
+import { useVerifyFork, ApiError, getVerifyForkQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -24,12 +24,14 @@ export function DeployPage() {
     },
   });
 
+  const verifyParams = { username: username || "" };
   const { data: verificationData, isLoading, isError, error, refetch } = useVerifyFork(
-    { username: username || "" },
+    verifyParams,
     {
       query: {
         enabled: !!username,
         retry: false,
+        queryKey: getVerifyForkQueryKey(verifyParams),
       }
     }
   );
@@ -89,7 +91,7 @@ export function DeployPage() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Verification Failed</AlertTitle>
                 <AlertDescription>
-                  {(error as any)?.message || "Could not verify your GitHub account. Please try again."}
+                  {error instanceof ApiError ? error.message : "Could not verify your GitHub account. Please try again."}
                 </AlertDescription>
               </Alert>
             )}

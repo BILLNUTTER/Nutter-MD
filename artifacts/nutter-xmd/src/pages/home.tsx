@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Copy, RefreshCw, QrCode, Hash, Smartphone, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { ApiError } from "@workspace/api-client-react";
 import { 
   usePairRequest, 
   useGetPairQr, 
@@ -76,11 +77,11 @@ export function HomePage() {
         data: { phoneNumber: values.phoneNumber }
       });
       setPairCode(res.pairCode);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         variant: "destructive",
         title: "Error requesting pair code",
-        description: err?.message || "Failed to initialize pairing",
+        description: err instanceof ApiError ? err.message : "Failed to initialize pairing",
       });
     }
   }
@@ -90,11 +91,11 @@ export function HomePage() {
       await resetPairing.mutateAsync();
       setPairCode(null);
       form.reset();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         variant: "destructive",
         title: "Error resetting",
-        description: err?.message || "Failed to reset pairing",
+        description: err instanceof ApiError ? err.message : "Failed to reset pairing",
       });
     }
   }
@@ -158,18 +159,17 @@ export function HomePage() {
                       <Skeleton className="h-10 flex-1" />
                     ) : (
                       <code className="flex-1 p-2 bg-muted rounded text-sm overflow-hidden text-ellipsis whitespace-nowrap font-mono text-primary/80">
-                        {/* We use any assertion here because Orval generated types might be slightly off if error is returned */}
-                        {(sessionData as any)?.sessionId || 'Waiting for session data...'}
+                        {(sessionData && 'sessionId' in sessionData ? sessionData.sessionId : null) || 'Waiting for session data...'}
                       </code>
                     )}
                     <Button 
                       variant="secondary" 
                       size="icon"
                       onClick={() => {
-                        const sid = (sessionData as any)?.sessionId;
+                        const sid = sessionData && 'sessionId' in sessionData ? sessionData.sessionId : null;
                         if (sid) copyToClipboard(sid, "Session ID");
                       }}
-                      disabled={!sessionData || !(sessionData as any).sessionId}
+                      disabled={!(sessionData && 'sessionId' in sessionData && sessionData.sessionId)}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -183,10 +183,10 @@ export function HomePage() {
           ) : (
             <Tabs value={mode} onValueChange={(v) => setMode(v as "code" | "qr")} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="code" disabled={isPairingActive && status !== "pair_code_ready" && status !== "idle"}>
+                <TabsTrigger value="code" disabled={isPairingActive && status !== "pair_code_ready"}>
                   <Hash className="w-4 h-4 mr-2" /> Pair Code
                 </TabsTrigger>
-                <TabsTrigger value="qr" disabled={isPairingActive && status !== "qr_ready" && status !== "idle"}>
+                <TabsTrigger value="qr" disabled={isPairingActive && status !== "qr_ready"}>
                   <QrCode className="w-4 h-4 mr-2" /> QR Code
                 </TabsTrigger>
               </TabsList>

@@ -8,28 +8,33 @@ let reconnectAttempts = 0;
 const MAX_RECONNECTS = 10;
 
 export async function startBot() {
-  const session = loadSessionFromEnv();
-  if (!session) {
+  const sessionAuth = await loadSessionFromEnv();
+  if (!sessionAuth) {
     logger.info("No SESSION_ID provided — bot engine not started. Set SESSION_ID env var to start the bot.");
     return;
   }
 
   logger.info("Starting NUTTER-XMD bot engine...");
-  await connectBot(session);
+  await connectBot(sessionAuth);
 }
 
-async function connectBot(session: unknown) {
+async function connectBot(sessionAuth: {
+  state: { creds: unknown; keys: unknown };
+  saveCreds: () => Promise<void>;
+}) {
   const { default: makeWASocket, DisconnectReason } = await import("@whiskeysockets/baileys");
   const { default: NodeCache } = await import("node-cache");
 
   const msgRetryCounterCache = new NodeCache();
 
   const sock = makeWASocket({
-    auth: session as Parameters<typeof makeWASocket>[0]["auth"],
+    auth: sessionAuth.state as Parameters<typeof makeWASocket>[0]["auth"],
     printQRInTerminal: false,
     browser: ["NUTTER-XMD", "Chrome", "1.0.0"],
     msgRetryCounterCache,
   });
+
+  sock.ev.on("creds.update", sessionAuth.saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
@@ -55,7 +60,7 @@ async function connectBot(session: unknown) {
 
       reconnectAttempts++;
       logger.warn({ reason, attempt: reconnectAttempts }, `Connection closed, reconnecting in ${RECONNECT_DELAY_MS}ms...`);
-      setTimeout(() => connectBot(session), RECONNECT_DELAY_MS);
+      setTimeout(() => connectBot(sessionAuth), RECONNECT_DELAY_MS);
     }
   });
 

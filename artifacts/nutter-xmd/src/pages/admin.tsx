@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ShieldAlert, RefreshCw, GitFork, Github, Clock, Search, Lock } from "lucide-react";
-import { useGetAdminForks } from "@workspace/api-client-react";
+import { useGetAdminForks, ApiError } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -35,7 +35,7 @@ export function AdminPage() {
   );
 
   // We consider it an auth error if it's 401 or 403
-  const isAuthError = isError && (error as any)?.error === "Unauthorized";
+  const isAuthError = isError && error instanceof ApiError && error.status === 401;
 
   function onSubmit(values: z.infer<typeof authSchema>) {
     setPassword(values.password);
