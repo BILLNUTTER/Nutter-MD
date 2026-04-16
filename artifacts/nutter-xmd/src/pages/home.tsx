@@ -242,7 +242,7 @@ export function HomePage() {
                     <div className="p-8 bg-muted/30 border border-border rounded-xl flex items-center justify-center group relative overflow-hidden">
                       <div className="absolute inset-0 bg-primary/5 group-hover:bg-primary/10 transition-colors" />
                       <div className="text-4xl md:text-5xl font-mono font-bold tracking-[0.2em] text-primary relative z-10 flex items-center gap-4">
-                        {pairCode.slice(0,4)}-{pairCode.slice(4)}
+                        {pairCode}
                         <Button 
                           size="icon" 
                           variant="ghost" 
