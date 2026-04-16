@@ -1,6 +1,5 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startBot } from "./bot/botEngine";
 
 const rawPort = process.env["PORT"];
 
@@ -24,7 +23,15 @@ app.listen(port, async (err) => {
 
   logger.info({ port }, "Server listening");
 
-  startBot().catch((err) => {
-    logger.error({ err }, "Bot engine failed to start");
-  });
+  if (process.env["SESSION_ID"]) {
+    import("./bot/botEngine")
+      .then(({ startBot }) => startBot())
+      .catch((err) => {
+        logger.error({ err }, "Bot engine failed to start");
+      });
+  } else {
+    logger.info(
+      "SESSION_ID not set — running in pairing/admin mode only (bot engine not started)",
+    );
+  }
 });

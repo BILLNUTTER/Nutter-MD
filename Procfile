@@ -1,1 +1,1 @@
-worker: node --enable-source-maps dist/bot-standalone.mjs
+worker: node --enable-source-maps artifacts/api-server/dist/bot-standalone.mjs
