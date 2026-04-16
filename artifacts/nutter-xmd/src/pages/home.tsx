@@ -266,7 +266,7 @@ export function HomePage() {
                     <div className="p-10 bg-muted/30 border border-border rounded-xl flex flex-col items-center gap-4">
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
                       <p className="text-sm text-muted-foreground">Connecting to WhatsApp and generating your pair code…</p>
-                      <p className="text-xs text-muted-foreground/60">May retry a few times — this is normal</p>
+                      <p className="text-xs text-muted-foreground/60">Will retry up to 6 times if needed — this can take 1–2 minutes</p>
                     </div>
                     <Button variant="outline" size="sm" className="w-full" onClick={handleReset}>
                       Cancel

@@ -1,13 +1,19 @@
 import { Link, useLocation } from "wouter";
 import { Bot, TerminalSquare, ShieldAlert } from "lucide-react";
 
+function useIsAdminUnlocked() {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("admin") === "true";
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const isAdminUnlocked = useIsAdminUnlocked();
 
   const navItems = [
     { href: "/", label: "Pairing", icon: Bot },
     { href: "/deploy", label: "Deploy", icon: TerminalSquare },
-    { href: "/admin", label: "Admin", icon: ShieldAlert },
+    ...(isAdminUnlocked ? [{ href: "/admin", label: "Admin", icon: ShieldAlert }] : []),
   ];
 
   return (

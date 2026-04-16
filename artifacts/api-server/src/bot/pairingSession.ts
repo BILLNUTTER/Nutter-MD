@@ -55,10 +55,16 @@ export function getActivePairingSocket() {
   return activePairingSocket;
 }
 
-const MAX_PAIRING_RETRIES = 3;
+const MAX_PAIRING_RETRIES = 6;
+
+function jitteredDelay(attempt: number): number {
+  const base = Math.min(5000 * (attempt + 1), 30000);
+  const jitter = Math.floor(Math.random() * 3000);
+  return base + jitter;
+}
 
 export async function startPairingSession(phoneNumber: string, attempt = 0): Promise<void> {
-  const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
+  const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = await import("@whiskeysockets/baileys");
   const fs = await import("fs");
   const path = await import("path");
 
@@ -70,8 +76,19 @@ export async function startPairingSession(phoneNumber: string, attempt = 0): Pro
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
+  let version: [number, number, number];
+  try {
+    const result = await fetchLatestBaileysVersion();
+    version = result.version;
+    logger.info({ version }, "Using latest WhatsApp version");
+  } catch {
+    version = [2, 3000, 1023076382];
+    logger.warn("Could not fetch latest version, using fallback");
+  }
+
   const sock = makeWASocket({
     auth: state,
+    version,
     printQRInTerminal: false,
     browser: Browsers.macOS("Safari"),
     connectTimeoutMs: 60000,
@@ -150,8 +167,8 @@ export async function startPairingSession(phoneNumber: string, attempt = 0): Pro
         // Already successfully connected once — just mark disconnected
         pairingState.status = "disconnected";
       } else if (attempt < MAX_PAIRING_RETRIES) {
-        // Connection failed before pairing completed — retry with backoff
-        const delayMs = (attempt + 1) * 3000;
+        // Connection failed before pairing completed — retry with jittered backoff
+        const delayMs = jitteredDelay(attempt);
         logger.warn({ attempt: attempt + 1, delayMs }, "WhatsApp connection closed before pairing — retrying");
         pairingState.status = "connecting"; // keep showing "connecting" during retry
         pairCodeRequested = false;
@@ -170,7 +187,7 @@ export async function startPairingSession(phoneNumber: string, attempt = 0): Pro
 }
 
 export async function startQrSession(attempt = 0): Promise<void> {
-  const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
+  const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = await import("@whiskeysockets/baileys");
   const { default: QRCode } = await import("qrcode");
   const fs = await import("fs");
   const path = await import("path");
@@ -183,8 +200,17 @@ export async function startQrSession(attempt = 0): Promise<void> {
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
+  let version: [number, number, number];
+  try {
+    const result = await fetchLatestBaileysVersion();
+    version = result.version;
+  } catch {
+    version = [2, 3000, 1023076382];
+  }
+
   const sock = makeWASocket({
     auth: state,
+    version,
     printQRInTerminal: false,
     browser: Browsers.macOS("Safari"),
     connectTimeoutMs: 60000,
@@ -262,7 +288,7 @@ export async function startQrSession(attempt = 0): Promise<void> {
       } else if (pairingState.status === "connected") {
         pairingState.status = "disconnected";
       } else if (attempt < MAX_PAIRING_RETRIES) {
-        const delayMs = (attempt + 1) * 3000;
+        const delayMs = jitteredDelay(attempt);
         logger.warn({ attempt: attempt + 1, delayMs }, "WhatsApp QR connection closed before scanning — retrying");
         pairingState.qrDataUrl = null; // clear stale QR so UI shows "connecting" again
         pairingState.status = "connecting";
