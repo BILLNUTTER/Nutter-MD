@@ -26,13 +26,19 @@ export const PairRequestBody = zod.object({
 });
 
 export const PairRequestResponse = zod.object({
-  pairCode: zod.string().describe("8-character pair code to enter in WhatsApp"),
+  pairCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "8-character pair code. Null initially — poll \/pair\/status until status is pair_code_ready",
+    ),
   phoneNumber: zod.string(),
   pairingToken: zod
     .string()
     .describe(
       "One-time token required to retrieve the SESSION_ID from \/pair\/session",
     ),
+  status: zod.string(),
 });
 
 /**
@@ -60,6 +66,10 @@ export const GetPairStatusResponse = zod.object({
     "disconnected",
   ]),
   phoneNumber: zod.string().nullish(),
+  pairCode: zod
+    .string()
+    .nullish()
+    .describe("Pair code once status is pair_code_ready, null otherwise"),
 });
 
 /**

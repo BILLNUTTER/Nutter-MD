@@ -55,7 +55,7 @@ export function getActivePairingSocket() {
   return activePairingSocket;
 }
 
-export async function startPairingSession(phoneNumber: string): Promise<string> {
+export async function startPairingSession(phoneNumber: string): Promise<void> {
   const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
   const fs = await import("fs");
   const path = await import("path");
@@ -66,92 +66,84 @@ export async function startPairingSession(phoneNumber: string): Promise<string> 
   }
   fs.mkdirSync(sessionDir, { recursive: true });
 
-  resetPairingState();
-  pairingState.status = "connecting";
-  pairingState.phoneNumber = phoneNumber;
-  pairingState.pairingToken = generatePairingToken();
-
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
-  return new Promise((resolve, reject) => {
-    const sock = makeWASocket({
-      auth: state,
-      printQRInTerminal: false,
-      browser: Browsers.ubuntu("Chrome"),
-    });
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    browser: Browsers.ubuntu("Chrome"),
+  });
 
-    setActivePairingSocket(sock);
+  setActivePairingSocket(sock);
 
-    sock.ev.on("creds.update", async () => {
-      await saveCreds();
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    try {
+      const files = fs.readdirSync(sessionDir);
+      const fileMap: SessionFileMap = {};
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(sessionDir, file), "utf-8");
+        fileMap[file] = JSON.parse(content);
+      }
+      pairingState.sessionId = encodeSessionToBase64(fileMap);
+    } catch (err) {
+      logger.error({ err }, "Failed to serialize credentials");
+    }
+  });
+
+  const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
+  let pairCodeRequested = false;
+
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    // Use the QR event as a signal that the socket is connected and ready.
+    // In pair-code mode we don't display the QR — we use it to trigger requestPairingCode.
+    if (qr && !pairCodeRequested) {
+      pairCodeRequested = true;
       try {
-        const files = fs.readdirSync(sessionDir);
-        const fileMap: SessionFileMap = {};
-        for (const file of files) {
-          const content = fs.readFileSync(path.join(sessionDir, file), "utf-8");
-          fileMap[file] = JSON.parse(content);
-        }
-        pairingState.sessionId = encodeSessionToBase64(fileMap);
+        const code = await sock.requestPairingCode(cleanNumber);
+        const formattedCode = code?.match(/.{1,4}/g)?.join("-") ?? code;
+        pairingState.pairCode = formattedCode ?? null;
+        pairingState.status = "pair_code_ready";
+        logger.info({ code: formattedCode }, "Pair code generated");
       } catch (err) {
-        logger.error({ err }, "Failed to serialize credentials");
+        logger.error({ err }, "Failed to generate pair code");
+        pairingState.status = "disconnected";
       }
-    });
+    }
 
-    const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
-    let pairCodeRequested = false;
+    if (connection === "open") {
+      pairingState.status = "connected";
+      logger.info({ phoneNumber }, "WhatsApp pairing session connected");
 
-    sock.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      // Use the QR event as a signal that the socket is connected and ready.
-      // In pair-code mode we don't display the QR — we use it to trigger requestPairingCode.
-      if (qr && !pairCodeRequested) {
-        pairCodeRequested = true;
+      // Send SESSION_ID directly to the user's WhatsApp DM
+      if (pairingState.sessionId) {
+        const jid = `${cleanNumber}@s.whatsapp.net`;
+        const msg =
+          `*NUTTER-XMD — Your Session ID*\n\n` +
+          `Your WhatsApp account is now linked. Copy the SESSION_ID below and paste it as the ` +
+          `SESSION_ID environment variable when deploying to Heroku:\n\n` +
+          `${pairingState.sessionId}\n\n` +
+          `_Keep this private — anyone with it can control your bot._`;
         try {
-          const code = await sock.requestPairingCode(cleanNumber);
-          const formattedCode = code?.match(/.{1,4}/g)?.join("-") ?? code;
-          pairingState.pairCode = formattedCode ?? null;
-          pairingState.status = "pair_code_ready";
-          logger.info({ code: formattedCode }, "Pair code generated");
-          resolve(formattedCode ?? "");
+          await sock.sendMessage(jid, { text: msg });
+          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
         } catch (err) {
-          pairingState.status = "idle";
-          reject(err);
+          logger.error({ err }, "Failed to send SESSION_ID to user DM");
         }
       }
+    }
 
-      if (connection === "open") {
-        pairingState.status = "connected";
-        logger.info({ phoneNumber }, "WhatsApp pairing session connected");
-
-        // Send SESSION_ID directly to the user's WhatsApp DM
-        if (pairingState.sessionId) {
-          const jid = `${cleanNumber}@s.whatsapp.net`;
-          const msg =
-            `*NUTTER-XMD — Your Session ID*\n\n` +
-            `Your WhatsApp account is now linked. Copy the SESSION_ID below and paste it as the ` +
-            `SESSION_ID environment variable when deploying to Heroku:\n\n` +
-            `${pairingState.sessionId}\n\n` +
-            `_Keep this private — anyone with it can control your bot._`;
-          try {
-            await sock.sendMessage(jid, { text: msg });
-            logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
-          } catch (err) {
-            logger.error({ err }, "Failed to send SESSION_ID to user DM");
-          }
-        }
+    if (connection === "close") {
+      const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      if (reason === DisconnectReason.loggedOut) {
+        pairingState.status = "disconnected";
+        resetPairingState();
+      } else if (pairingState.status !== "connected") {
+        pairingState.status = "disconnected";
       }
-
-      if (connection === "close") {
-        const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
-        if (reason === DisconnectReason.loggedOut) {
-          pairingState.status = "disconnected";
-          resetPairingState();
-        } else if (pairingState.status !== "connected") {
-          pairingState.status = "disconnected";
-        }
-      }
-    });
+    }
   });
 }
 

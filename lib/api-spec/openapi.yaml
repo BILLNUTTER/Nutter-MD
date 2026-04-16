@@ -255,16 +255,19 @@ components:
       properties:
         pairCode:
           type: string
-          description: 8-character pair code to enter in WhatsApp
+          nullable: true
+          description: 8-character pair code. Null initially — poll /pair/status until status is pair_code_ready
         phoneNumber:
           type: string
         pairingToken:
           type: string
           description: One-time token required to retrieve the SESSION_ID from /pair/session
+        status:
+          type: string
       required:
-        - pairCode
         - phoneNumber
         - pairingToken
+        - status
 
     StartQrResponse:
       type: object
@@ -301,6 +304,10 @@ components:
         phoneNumber:
           type: string
           nullable: true
+        pairCode:
+          type: string
+          nullable: true
+          description: Pair code once status is pair_code_ready, null otherwise
       required:
         - status
 

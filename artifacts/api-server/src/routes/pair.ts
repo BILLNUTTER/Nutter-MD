@@ -19,13 +19,27 @@ router.post("/pair/request", async (req, res) => {
     return;
   }
 
-  try {
-    const pairCode = await startPairingSession(phoneNumber);
-    res.json({ pairCode, phoneNumber, pairingToken: pairingState.pairingToken });
-  } catch (err) {
-    logger.error({ err }, "Pairing request failed");
-    res.status(500).json({ error: "PAIRING_FAILED", message: "Failed to start pairing. Try again." });
-  }
+  resetPairingState();
+  pairingState.status = "connecting";
+  pairingState.phoneNumber = phoneNumber;
+  pairingState.pairingToken = generatePairingToken();
+
+  // Start the Baileys session in the background — return the token immediately
+  // so Heroku's 30-second request timeout is never hit.
+  // The pair code will appear in GET /pair/status once WhatsApp responds.
+  startPairingSession(phoneNumber).catch((err) => {
+    logger.error({ err }, "Pairing session error");
+    if (pairingState.status === "connecting") {
+      pairingState.status = "disconnected";
+    }
+  });
+
+  res.json({
+    pairCode: null,
+    phoneNumber,
+    pairingToken: pairingState.pairingToken,
+    status: "connecting",
+  });
 });
 
 router.get("/pair/qr", (_req, res) => {
@@ -40,6 +54,7 @@ router.get("/pair/status", (_req, res) => {
   res.json({
     status: pairingState.status,
     phoneNumber: pairingState.phoneNumber,
+    pairCode: pairingState.pairCode,
   });
 });
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -7,9 +7,11 @@ import { ApiError } from "@workspace/api-client-react";
 import {
   usePairRequest,
   useGetPairQr,
+  useGetPairStatus,
   useResetPairing,
   useStartQrPairing,
   getGetPairQrQueryKey,
+  getGetPairStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +40,7 @@ export function HomePage() {
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [pairingToken, setPairingToken] = useState<string | null>(null);
   const [qrActive, setQrActive] = useState(false);
+  const [pairCodePending, setPairCodePending] = useState(false);
 
   const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
   const [isFetchingSession, setIsFetchingSession] = useState(false);
@@ -72,13 +75,39 @@ export function HomePage() {
     },
   });
 
+  // Poll /pair/status every 2s after submitting — stops once pair code arrives or session fails
+  const { data: statusData } = useGetPairStatus({
+    query: {
+      enabled: pairCodePending,
+      queryKey: getGetPairStatusQueryKey(),
+      refetchInterval: 2000,
+      retry: false,
+    },
+  });
+
+  useEffect(() => {
+    if (!statusData) return;
+    if (statusData.pairCode && statusData.status === "pair_code_ready") {
+      setPairCode(statusData.pairCode);
+      setPairCodePending(false);
+    } else if (statusData.status === "disconnected") {
+      setPairCodePending(false);
+      toast({
+        variant: "destructive",
+        title: "WhatsApp connection failed",
+        description: "Could not reach WhatsApp. Try again or use QR code mode.",
+      });
+    }
+  }, [statusData]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       const res = await pairRequest.mutateAsync({ data: { phoneNumber: values.phoneNumber } });
-      setPairCode(res.pairCode);
       if (res.pairingToken) setPairingToken(res.pairingToken);
       setSessionResult(null);
       setSessionError(null);
+      setPairCode(null);
+      setPairCodePending(true); // start polling /pair/status for the code
     } catch (err: unknown) {
       toast({
         variant: "destructive",
@@ -95,6 +124,7 @@ export function HomePage() {
     setPairCode(null);
     setPairingToken(null);
     setQrActive(false);
+    setPairCodePending(false);
     setSessionResult(null);
     setSessionError(null);
     form.reset();
@@ -197,7 +227,7 @@ export function HomePage() {
               </TabsList>
 
               <TabsContent value="code" className="space-y-4">
-                {!pairCode ? (
+                {!pairCode && !pairCodePending ? (
                   <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                       <FormField
@@ -229,6 +259,16 @@ export function HomePage() {
                       </Button>
                     </form>
                   </Form>
+                ) : pairCodePending && !pairCode ? (
+                  <div className="space-y-4 text-center animate-in fade-in duration-300">
+                    <div className="p-10 bg-muted/30 border border-border rounded-xl flex flex-col items-center gap-4">
+                      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                      <p className="text-sm text-muted-foreground">Connecting to WhatsApp and generating your pair code…</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full" onClick={handleReset}>
+                      Cancel
+                    </Button>
+                  </div>
                 ) : (
                   <div className="space-y-6 text-center animate-in fade-in duration-300">
                     <div className="space-y-2">
@@ -244,7 +284,7 @@ export function HomePage() {
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 text-muted-foreground hover:text-primary"
-                          onClick={() => copyToClipboard(pairCode, "Pair Code")}
+                          onClick={() => pairCode && copyToClipboard(pairCode, "Pair Code")}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>

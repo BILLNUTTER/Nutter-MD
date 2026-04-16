@@ -20,11 +20,12 @@ export interface PairRequestBody {
 }
 
 export interface PairRequestResponse {
-  /** 8-character pair code to enter in WhatsApp */
-  pairCode: string;
+  /** 8-character pair code. Null initially — poll /pair/status until status is pair_code_ready */
+  pairCode?: string | null;
   phoneNumber: string;
   /** One-time token required to retrieve the SESSION_ID from /pair/session */
   pairingToken: string;
+  status: string;
 }
 
 export interface StartQrResponse {
@@ -55,6 +56,8 @@ export const PairStatusResponseStatus = {
 export interface PairStatusResponse {
   status: PairStatusResponseStatus;
   phoneNumber?: string | null;
+  /** Pair code once status is pair_code_ready, null otherwise */
+  pairCode?: string | null;
 }
 
 export interface PairSessionResponse {

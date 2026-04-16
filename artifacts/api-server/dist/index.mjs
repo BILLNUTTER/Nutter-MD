@@ -64019,11 +64019,14 @@ var PairRequestBody = objectType({
   phoneNumber: stringType().describe("Phone number in international format (e.g. +254712345678)")
 });
 var PairRequestResponse = objectType({
-  pairCode: stringType().describe("8-character pair code to enter in WhatsApp"),
+  pairCode: stringType().nullish().describe(
+    "8-character pair code. Null initially \u2014 poll /pair/status until status is pair_code_ready"
+  ),
   phoneNumber: stringType(),
   pairingToken: stringType().describe(
     "One-time token required to retrieve the SESSION_ID from /pair/session"
-  )
+  ),
+  status: stringType()
 });
 var GetPairQrResponse = objectType({
   qr: stringType().describe("QR code as base64 data URL (data:image/png;base64,...)"),
@@ -64038,7 +64041,8 @@ var GetPairStatusResponse = objectType({
     "connected",
     "disconnected"
   ]),
-  phoneNumber: stringType().nullish()
+  phoneNumber: stringType().nullish(),
+  pairCode: stringType().nullish().describe("Pair code once status is pair_code_ready, null otherwise")
 });
 var GetPairSessionResponse = objectType({
   sessionId: stringType().describe("Base64-encoded session credentials to paste into Heroku config"),
@@ -64127,80 +64131,73 @@ async function startPairingSession(phoneNumber) {
     fs2.rmSync(sessionDir, { recursive: true, force: true });
   }
   fs2.mkdirSync(sessionDir, { recursive: true });
-  resetPairingState();
-  pairingState.status = "connecting";
-  pairingState.phoneNumber = phoneNumber;
-  pairingState.pairingToken = generatePairingToken();
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-  return new Promise((resolve, reject) => {
-    const sock = makeWASocket({
-      auth: state,
-      printQRInTerminal: false,
-      browser: Browsers.ubuntu("Chrome")
-    });
-    setActivePairingSocket(sock);
-    sock.ev.on("creds.update", async () => {
-      await saveCreds();
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    browser: Browsers.ubuntu("Chrome")
+  });
+  setActivePairingSocket(sock);
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    try {
+      const files = fs2.readdirSync(sessionDir);
+      const fileMap = {};
+      for (const file2 of files) {
+        const content = fs2.readFileSync(path3.join(sessionDir, file2), "utf-8");
+        fileMap[file2] = JSON.parse(content);
+      }
+      pairingState.sessionId = encodeSessionToBase64(fileMap);
+    } catch (err) {
+      logger.error({ err }, "Failed to serialize credentials");
+    }
+  });
+  const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
+  let pairCodeRequested = false;
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    if (qr && !pairCodeRequested) {
+      pairCodeRequested = true;
       try {
-        const files = fs2.readdirSync(sessionDir);
-        const fileMap = {};
-        for (const file2 of files) {
-          const content = fs2.readFileSync(path3.join(sessionDir, file2), "utf-8");
-          fileMap[file2] = JSON.parse(content);
-        }
-        pairingState.sessionId = encodeSessionToBase64(fileMap);
+        const code = await sock.requestPairingCode(cleanNumber);
+        const formattedCode = code?.match(/.{1,4}/g)?.join("-") ?? code;
+        pairingState.pairCode = formattedCode ?? null;
+        pairingState.status = "pair_code_ready";
+        logger.info({ code: formattedCode }, "Pair code generated");
       } catch (err) {
-        logger.error({ err }, "Failed to serialize credentials");
+        logger.error({ err }, "Failed to generate pair code");
+        pairingState.status = "disconnected";
       }
-    });
-    const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
-    let pairCodeRequested = false;
-    sock.ev.on("connection.update", async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      if (qr && !pairCodeRequested) {
-        pairCodeRequested = true;
-        try {
-          const code = await sock.requestPairingCode(cleanNumber);
-          const formattedCode = code?.match(/.{1,4}/g)?.join("-") ?? code;
-          pairingState.pairCode = formattedCode ?? null;
-          pairingState.status = "pair_code_ready";
-          logger.info({ code: formattedCode }, "Pair code generated");
-          resolve(formattedCode ?? "");
-        } catch (err) {
-          pairingState.status = "idle";
-          reject(err);
-        }
-      }
-      if (connection === "open") {
-        pairingState.status = "connected";
-        logger.info({ phoneNumber }, "WhatsApp pairing session connected");
-        if (pairingState.sessionId) {
-          const jid = `${cleanNumber}@s.whatsapp.net`;
-          const msg = `*NUTTER-XMD \u2014 Your Session ID*
+    }
+    if (connection === "open") {
+      pairingState.status = "connected";
+      logger.info({ phoneNumber }, "WhatsApp pairing session connected");
+      if (pairingState.sessionId) {
+        const jid = `${cleanNumber}@s.whatsapp.net`;
+        const msg = `*NUTTER-XMD \u2014 Your Session ID*
 
 Your WhatsApp account is now linked. Copy the SESSION_ID below and paste it as the SESSION_ID environment variable when deploying to Heroku:
 
 ${pairingState.sessionId}
 
 _Keep this private \u2014 anyone with it can control your bot._`;
-          try {
-            await sock.sendMessage(jid, { text: msg });
-            logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
-          } catch (err) {
-            logger.error({ err }, "Failed to send SESSION_ID to user DM");
-          }
+        try {
+          await sock.sendMessage(jid, { text: msg });
+          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
+        } catch (err) {
+          logger.error({ err }, "Failed to send SESSION_ID to user DM");
         }
       }
-      if (connection === "close") {
-        const reason = lastDisconnect?.error?.output?.statusCode;
-        if (reason === DisconnectReason.loggedOut) {
-          pairingState.status = "disconnected";
-          resetPairingState();
-        } else if (pairingState.status !== "connected") {
-          pairingState.status = "disconnected";
-        }
+    }
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode;
+      if (reason === DisconnectReason.loggedOut) {
+        pairingState.status = "disconnected";
+        resetPairingState();
+      } else if (pairingState.status !== "connected") {
+        pairingState.status = "disconnected";
       }
-    });
+    }
   });
 }
 async function startQrSession() {
@@ -64297,13 +64294,22 @@ router2.post("/pair/request", async (req, res) => {
     res.status(400).json({ error: "ALREADY_CONNECTED", message: "A session is already connected. Reset first." });
     return;
   }
-  try {
-    const pairCode = await startPairingSession(phoneNumber);
-    res.json({ pairCode, phoneNumber, pairingToken: pairingState.pairingToken });
-  } catch (err) {
-    logger.error({ err }, "Pairing request failed");
-    res.status(500).json({ error: "PAIRING_FAILED", message: "Failed to start pairing. Try again." });
-  }
+  resetPairingState();
+  pairingState.status = "connecting";
+  pairingState.phoneNumber = phoneNumber;
+  pairingState.pairingToken = generatePairingToken();
+  startPairingSession(phoneNumber).catch((err) => {
+    logger.error({ err }, "Pairing session error");
+    if (pairingState.status === "connecting") {
+      pairingState.status = "disconnected";
+    }
+  });
+  res.json({
+    pairCode: null,
+    phoneNumber,
+    pairingToken: pairingState.pairingToken,
+    status: "connecting"
+  });
 });
 router2.get("/pair/qr", (_req, res) => {
   if (!pairingState.qrDataUrl) {
@@ -64315,7 +64321,8 @@ router2.get("/pair/qr", (_req, res) => {
 router2.get("/pair/status", (_req, res) => {
   res.json({
     status: pairingState.status,
-    phoneNumber: pairingState.phoneNumber
+    phoneNumber: pairingState.phoneNumber,
+    pairCode: pairingState.pairCode
   });
 });
 router2.get("/pair/session", (req, res) => {
