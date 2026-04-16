@@ -105,7 +105,10 @@ async function extractVideoFirstFrame(videoBuffer: Buffer): Promise<Buffer> {
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg exited with code ${code}`));
     });
-    proc.on("error", reject);
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") reject(new Error("FFMPEG_NOT_FOUND"));
+      else reject(err);
+    });
   });
 
   const frameBuffer = fs.default.readFileSync(outputPath);
@@ -154,7 +157,12 @@ export async function handleSticker(sock: WASocket, msg: proto.IWebMessageInfo, 
     await sock.sendMessage(ctx.jid, { sticker: webpBuffer });
   } catch (err) {
     logger.error({ err }, "Sticker conversion failed");
-    await sock.sendMessage(ctx.jid, { text: "Sticker conversion failed. Please try again." });
+    const isNoFfmpeg = err instanceof Error && err.message === "FFMPEG_NOT_FOUND";
+    await sock.sendMessage(ctx.jid, {
+      text: isNoFfmpeg
+        ? "Video stickers are not supported on this server (ffmpeg not installed). Try sending an image instead."
+        : "Sticker conversion failed. Please try again.",
+    });
   }
 }
 

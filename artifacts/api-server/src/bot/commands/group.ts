@@ -106,7 +106,12 @@ export async function handleAntilink(sock: WASocket, _msg: proto.IWebMessageInfo
     await sock.sendMessage(ctx.jid, { text: "Only group admins can use this." });
     return;
   }
-  const state = args[0]?.toLowerCase() === "on";
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    await sock.sendMessage(ctx.jid, { text: "Usage: .antilink on | .antilink off" });
+    return;
+  }
+  const state = raw === "on";
   await ensureGroupSettings(ctx.jid);
   await updateGroupSetting(ctx.jid, { antilink: state });
   await sock.sendMessage(ctx.jid, { text: `Antilink is now ${state ? "ON" : "OFF"}.` });
@@ -117,7 +122,12 @@ export async function handleAntibadword(sock: WASocket, _msg: proto.IWebMessageI
     await sock.sendMessage(ctx.jid, { text: "Only group admins can use this." });
     return;
   }
-  const state = args[0]?.toLowerCase() === "on";
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    await sock.sendMessage(ctx.jid, { text: "Usage: .antibadword on | .antibadword off" });
+    return;
+  }
+  const state = raw === "on";
   await ensureGroupSettings(ctx.jid);
   await updateGroupSetting(ctx.jid, { antibadword: state });
   await sock.sendMessage(ctx.jid, { text: `Antibadword is now ${state ? "ON" : "OFF"}.` });
@@ -128,7 +138,12 @@ export async function handleAntimention(sock: WASocket, _msg: proto.IWebMessageI
     await sock.sendMessage(ctx.jid, { text: "Only group admins can use this." });
     return;
   }
-  const state = args[0]?.toLowerCase() === "on";
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    await sock.sendMessage(ctx.jid, { text: "Usage: .antimention on | .antimention off" });
+    return;
+  }
+  const state = raw === "on";
   await ensureGroupSettings(ctx.jid);
   await updateGroupSetting(ctx.jid, { antimention: state });
   await sock.sendMessage(ctx.jid, { text: `Antimention is now ${state ? "ON" : "OFF"}.` });
