@@ -3,7 +3,7 @@
 ## Project Overview
 
 NUTTER-XMD is a WhatsApp multi-device bot platform. It has two deployment targets:
-- **Deployment A** (admin's Render.com web service): Pairing page, deploy page (fork verification), admin dashboard — Express serves both API and built React frontend
+- **Deployment A** (admin's Heroku web service): Pairing page, deploy page (fork verification), admin dashboard — Express serves both API and built React frontend
 - **Deployment B** (each deployer's Heroku): Baileys-based bot engine using SESSION_ID from Heroku config vars
 
 ## Architecture
@@ -50,17 +50,20 @@ NUTTER-XMD is a WhatsApp multi-device bot platform. It has two deployment target
 
 ## Deployment
 
-### Deployment A — Admin's Render.com web service
-`render.yaml` at the repo root configures a single Render web service that:
-1. Installs deps, builds the React frontend (`artifacts/nutter-xmd/dist/public`), then builds the Express API bundle
-2. Runs `node artifacts/api-server/dist/index.mjs` — Express serves `/api/*` routes and static React files at `/*`
-3. Handles SPA routing via a wildcard `GET *` → `index.html` fallback (production only)
+### Deployment A — Admin's Heroku web service
+The `Procfile` `web` dyno runs `node artifacts/api-server/dist/index.mjs`.
+Express serves `/api/*` routes and the built React frontend at `/*` in production.
 
-Required env vars on Render: `ADMIN_PASSWORD` (set as secret in Render dashboard).  
-Do NOT set `SESSION_ID` on Render — bot engine must not start on the admin server.
+Deploy steps:
+1. Create a new Heroku app (manual, not the "Deploy to Heroku" button — that is for deployers)
+2. Connect the GitHub repo — Heroku detects pnpm, runs `heroku-postbuild` to build frontend + API
+3. In Resources tab: scale `web` dyno to 1, `worker` dyno to 0
+4. Set config vars: `NODE_ENV=production`, `ADMIN_PASSWORD=<yourpassword>`
+5. Do NOT set `SESSION_ID` — bot engine must not start on the admin server
 
 ### Deployment B — Deployer's Heroku dyno
-Procfile: `worker: node --enable-source-maps artifacts/api-server/dist/bot-standalone.mjs`  
+Procfile `worker` dyno runs `node artifacts/api-server/dist/bot-standalone.mjs`.
 Required Heroku config vars: `SESSION_ID`, `OWNER_NUMBER`, `DATABASE_URL`, `BOT_NAME`, `PREFIX`.
+The "Deploy to Heroku" button in the README uses `app.json` which auto-configures the worker formation.
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
