@@ -199,6 +199,7 @@ export async function startPairingSession(
       if (myGeneration !== currentGeneration) return;
 
       const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      logger.warn({ reason, attempt, pairingStatus: pairingState.status }, "WhatsApp connection closed");
 
       if (reason === DisconnectReason.loggedOut) {
         pairingState.status = "disconnected";
@@ -212,22 +213,28 @@ export async function startPairingSession(
       }
 
       if (attempt < MAX_PAIRING_RETRIES) {
-        const delayMs = jitteredDelay(attempt);
         const hasPairCode = !!(pairingState.pairCode && pairingState.status === "pair_code_ready");
 
         if (hasPairCode) {
-          // Pair code already shown to the user — reconnect WITHOUT requesting a new code.
-          // WhatsApp will send the pairing confirmation over this new socket once the
-          // user enters the code in their phone.
-          logger.info({ attempt: attempt + 1, delayMs }, "Reconnecting to receive pair code confirmation (no new code)");
+          // The pair code is bound to the noise session that generated it.
+          // Now that session is dead, the code is permanently invalid — WhatsApp
+          // will reject it if the user tries to enter it.
+          // Clear the old code and start a fresh session to get a new one.
+          // The frontend polls continuously so it will pick up the new code.
+          logger.info({ attempt: attempt + 1 }, "Pair code session expired — starting fresh to get a new code");
+          pairingState.pairCode = null;
+          pairingState.status = "connecting";
         } else {
-          logger.warn({ attempt: attempt + 1, delayMs }, "WhatsApp connection closed before pairing — retrying");
+          logger.warn({ attempt: attempt + 1 }, "WhatsApp connection closed before pairing — retrying");
           pairingState.status = "connecting";
         }
 
+        // Short fixed delay so the new code appears quickly
+        const delayMs = 2000;
         setTimeout(() => {
           if (myGeneration !== currentGeneration) return;
-          startPairingSession(phoneNumber, attempt + 1, hasPairCode).catch((err) => {
+          // Always start a fresh session (false = do request a new pair code)
+          startPairingSession(phoneNumber, attempt + 1, false).catch((err) => {
             logger.error({ err }, "Retry attempt failed");
             if (myGeneration === currentGeneration) pairingState.status = "disconnected";
           });

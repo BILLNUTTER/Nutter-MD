@@ -39,6 +39,9 @@ export function HomePage() {
   const [pairingToken, setPairingToken] = useState<string | null>(null);
   const [qrActive, setQrActive] = useState(false);
   const [pairCodePending, setPairCodePending] = useState(false);
+  // Keep polling while either waiting for initial code OR while code is displayed
+  // (codes auto-refresh when the WA session expires ~30s after generation)
+  const [pairSessionActive, setPairSessionActive] = useState(false);
 
   const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
   const [isFetchingSession, setIsFetchingSession] = useState(false);
@@ -73,27 +76,52 @@ export function HomePage() {
     },
   });
 
-  // Poll /pair/status every second using a plain interval — avoids React Query
-  // caching and enabled-flag timing issues that can swallow the code update.
+  // Poll /pair/status every second for the full lifecycle of the pairing session.
+  // Codes auto-refresh on the server when their WA noise session expires (~30s),
+  // so we keep polling even after the first code arrives and update the display.
   useEffect(() => {
-    if (!pairCodePending) return;
+    if (!pairSessionActive) return;
 
     const poll = async () => {
       try {
         const res = await fetch("/api/pair/status");
         if (!res.ok) return;
         const data = await res.json() as { status: string; pairCode: string | null };
-        if (data.pairCode && data.status === "pair_code_ready") {
-          setPairCode(data.pairCode);
-          setPairCodePending(false);
-          toast({ title: "Pair code ready!", description: "Enter the code in WhatsApp → Linked Devices → Link a Device." });
-        } else if (data.status === "disconnected") {
+
+        if (data.status === "connected") {
+          // Pairing complete — stop polling (session fetch handles the rest)
+          setPairSessionActive(false);
+          return;
+        }
+
+        if (data.status === "disconnected") {
+          setPairSessionActive(false);
+          setPairCode(null);
           setPairCodePending(false);
           toast({
             variant: "destructive",
             title: "WhatsApp connection failed",
             description: "Could not reach WhatsApp. Try again or use QR code mode.",
           });
+          return;
+        }
+
+        if (data.pairCode && data.status === "pair_code_ready") {
+          setPairCode((prev) => {
+            if (!prev) {
+              // First code — notify user
+              toast({ title: "Pair code ready!", description: "Enter it in WhatsApp → Linked Devices → Link a Device → Link with phone number." });
+            } else if (prev !== data.pairCode) {
+              // Code refreshed — old noise session expired, new one started
+              toast({ title: "Code refreshed!", description: "The previous code expired. Enter this new code quickly." });
+            }
+            return data.pairCode;
+          });
+          setPairCodePending(false);
+        } else if (data.status === "connecting" && pairCode) {
+          // Server is generating a fresh code after expiry — show brief spinner
+          setPairCode(null);
+          setPairCodePending(true);
         }
       } catch (_) { /* ignore transient network errors */ }
     };
@@ -101,7 +129,7 @@ export function HomePage() {
     const id = setInterval(poll, 1000);
     poll(); // fire immediately
     return () => clearInterval(id);
-  }, [pairCodePending]);
+  }, [pairSessionActive, pairCode]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
@@ -110,7 +138,8 @@ export function HomePage() {
       setSessionResult(null);
       setSessionError(null);
       setPairCode(null);
-      setPairCodePending(true); // start polling /pair/status for the code
+      setPairCodePending(true);
+      setPairSessionActive(true); // keep polling for the full session lifecycle
     } catch (err: unknown) {
       toast({
         variant: "destructive",
@@ -128,6 +157,7 @@ export function HomePage() {
     setPairingToken(null);
     setQrActive(false);
     setPairCodePending(false);
+    setPairSessionActive(false);
     setSessionResult(null);
     setSessionError(null);
     form.reset();
@@ -275,9 +305,17 @@ export function HomePage() {
                   </div>
                 ) : (
                   <div className="space-y-6 text-center animate-in fade-in duration-300">
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        Open WhatsApp → Linked Devices → Link a Device → enter this code:
+                    <div className="space-y-2 text-left bg-muted/30 rounded-lg p-4 border border-border text-sm">
+                      <p className="font-semibold text-foreground">How to link — follow these exact steps:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        <li>Open <strong>WhatsApp</strong> on your phone</li>
+                        <li>Go to <strong>Settings</strong> (⚙️) → <strong>Linked Devices</strong></li>
+                        <li>Tap <strong>Link a Device</strong></li>
+                        <li>Tap <strong>"Link with phone number"</strong> (not the camera / QR)</li>
+                        <li>Enter the code below — you have about 30 seconds</li>
+                      </ol>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium pt-1">
+                        ⚠ No WhatsApp notification will appear — you must open Settings manually.
                       </p>
                     </div>
                     <div className="p-8 bg-muted/30 border border-border rounded-xl flex items-center justify-center group relative overflow-hidden">

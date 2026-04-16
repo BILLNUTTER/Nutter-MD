@@ -64227,6 +64227,7 @@ _Keep this private \u2014 anyone with it can control your bot._`;
     if (connection === "close") {
       if (myGeneration !== currentGeneration) return;
       const reason = lastDisconnect?.error?.output?.statusCode;
+      logger.warn({ reason, attempt, pairingStatus: pairingState.status }, "WhatsApp connection closed");
       if (reason === DisconnectReason.loggedOut) {
         pairingState.status = "disconnected";
         resetPairingState();
@@ -64237,17 +64238,19 @@ _Keep this private \u2014 anyone with it can control your bot._`;
         return;
       }
       if (attempt < MAX_PAIRING_RETRIES) {
-        const delayMs = jitteredDelay(attempt);
         const hasPairCode = !!(pairingState.pairCode && pairingState.status === "pair_code_ready");
         if (hasPairCode) {
-          logger.info({ attempt: attempt + 1, delayMs }, "Reconnecting to receive pair code confirmation (no new code)");
+          logger.info({ attempt: attempt + 1 }, "Pair code session expired \u2014 starting fresh to get a new code");
+          pairingState.pairCode = null;
+          pairingState.status = "connecting";
         } else {
-          logger.warn({ attempt: attempt + 1, delayMs }, "WhatsApp connection closed before pairing \u2014 retrying");
+          logger.warn({ attempt: attempt + 1 }, "WhatsApp connection closed before pairing \u2014 retrying");
           pairingState.status = "connecting";
         }
+        const delayMs = 2e3;
         setTimeout(() => {
           if (myGeneration !== currentGeneration) return;
-          startPairingSession(phoneNumber, attempt + 1, hasPairCode).catch((err) => {
+          startPairingSession(phoneNumber, attempt + 1, false).catch((err) => {
             logger.error({ err }, "Retry attempt failed");
             if (myGeneration === currentGeneration) pairingState.status = "disconnected";
           });
