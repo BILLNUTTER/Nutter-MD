@@ -21,7 +21,7 @@ router.post("/pair/request", async (req, res) => {
 
   try {
     const pairCode = await startPairingSession(phoneNumber);
-    res.json({ pairCode, phoneNumber });
+    res.json({ pairCode, phoneNumber, pairingToken: pairingState.pairingToken });
   } catch (err) {
     logger.error({ err }, "Pairing request failed");
     res.status(500).json({ error: "PAIRING_FAILED", message: "Failed to start pairing. Try again." });
@@ -43,7 +43,12 @@ router.get("/pair/status", (_req, res) => {
   });
 });
 
-router.get("/pair/session", (_req, res) => {
+router.get("/pair/session", (req, res) => {
+  const providedToken = req.headers["x-pairing-token"] as string | undefined;
+  if (!pairingState.pairingToken || providedToken !== pairingState.pairingToken) {
+    res.status(401).json({ error: "UNAUTHORIZED", message: "Invalid or missing pairing token. Use the token returned when you started the session." });
+    return;
+  }
   if (pairingState.status !== "connected" || !pairingState.sessionId) {
     res.status(202).json({ error: "NOT_READY", message: "Pairing not complete yet. Keep waiting." });
     return;
@@ -64,7 +69,7 @@ router.post("/pair/start-qr", async (_req, res) => {
     startQrSession().catch((err) => {
       logger.error({ err }, "QR session error");
     });
-    res.json({ status: "connecting", message: "QR session starting. Poll /pair/qr for the code." });
+    res.json({ status: "connecting", message: "QR session starting. Poll /pair/qr for the code.", pairingToken: pairingState.pairingToken });
   } catch (err) {
     logger.error({ err }, "Failed to start QR session");
     res.status(500).json({ error: "QR_FAILED", message: "Failed to start QR session. Try again." });

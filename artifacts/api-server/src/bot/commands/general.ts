@@ -37,7 +37,8 @@ export async function handleMenu(sock: WASocket, _msg: proto.IWebMessageInfo, ct
     `${prefix}antibadword on/off — Block bad words\n` +
     `${prefix}antimention on/off — Block mass mentions\n` +
     `${prefix}ban @user — Ban user from bot\n` +
-    `${prefix}unban @user — Unban user`;
+    `${prefix}unban @user — Unban user\n` +
+    `${prefix}setprefix <char> — Change command prefix`;
   await sock.sendMessage(ctx.jid, { text: menu });
 }
 
@@ -69,50 +70,91 @@ export async function handleSettings(sock: WASocket, _msg: proto.IWebMessageInfo
   await sock.sendMessage(ctx.jid, { text });
 }
 
+async function downloadToBuffer(mediaMsg: object, type: "image" | "video"): Promise<Buffer> {
+  const { downloadContentFromMessage } = await import("@whiskeysockets/baileys");
+  const stream = await downloadContentFromMessage(
+    mediaMsg as Parameters<typeof downloadContentFromMessage>[0],
+    type
+  );
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function extractVideoFirstFrame(videoBuffer: Buffer): Promise<Buffer> {
+  const os = await import("os");
+  const path = await import("path");
+  const fs = await import("fs");
+  const { spawn } = await import("child_process");
+
+  const tmpDir = os.default.tmpdir();
+  const inputPath = path.default.join(tmpDir, `nutter_vid_${Date.now()}.mp4`);
+  const outputPath = path.default.join(tmpDir, `nutter_frame_${Date.now()}.png`);
+
+  fs.default.writeFileSync(inputPath, videoBuffer);
+
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y", "-i", inputPath,
+      "-ss", "0", "-vframes", "1",
+      "-f", "image2", outputPath,
+    ]);
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited with code ${code}`));
+    });
+    proc.on("error", reject);
+  });
+
+  const frameBuffer = fs.default.readFileSync(outputPath);
+  fs.default.rmSync(inputPath, { force: true });
+  fs.default.rmSync(outputPath, { force: true });
+  return frameBuffer;
+}
+
 export async function handleSticker(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
   if (!quoted) {
-    await sock.sendMessage(ctx.jid, { text: "Reply to an image with .sticker to convert it to a sticker." });
+    await sock.sendMessage(ctx.jid, { text: "Reply to an image or video with .sticker to convert it to a sticker." });
     return;
   }
 
   const imageMsg = quoted.imageMessage;
-  if (!imageMsg) {
-    if (quoted.videoMessage) {
-      await sock.sendMessage(ctx.jid, { text: "Video stickers require ffmpeg. Currently only static image stickers are supported — reply to an image." });
-    } else {
-      await sock.sendMessage(ctx.jid, { text: "Only images can be converted to stickers. Reply to an image." });
-    }
+  const videoMsg = quoted.videoMessage;
+
+  if (!imageMsg && !videoMsg) {
+    await sock.sendMessage(ctx.jid, { text: "Only images and short videos can be converted to stickers. Reply to an image or video." });
     return;
   }
 
   try {
-    const { downloadContentFromMessage } = await import("@whiskeysockets/baileys");
     const { default: sharp } = await import("sharp");
 
-    const stream = await downloadContentFromMessage(imageMsg, "image");
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(chunk as Buffer);
-    }
-    const buffer = Buffer.concat(chunks);
+    let sourceBuffer: Buffer;
 
-    if (!buffer || buffer.length === 0) {
-      await sock.sendMessage(ctx.jid, { text: "Could not download the image. Please try again." });
+    if (imageMsg) {
+      sourceBuffer = await downloadToBuffer(imageMsg, "image");
+    } else {
+      sourceBuffer = await downloadToBuffer(videoMsg!, "video");
+      sourceBuffer = await extractVideoFirstFrame(sourceBuffer);
+    }
+
+    if (!sourceBuffer || sourceBuffer.length === 0) {
+      await sock.sendMessage(ctx.jid, { text: "Could not download the media. Please try again." });
       return;
     }
 
-    const webpBuffer = await sharp(buffer)
+    const webpBuffer = await sharp(sourceBuffer)
       .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .webp({ quality: 80 })
       .toBuffer();
 
-    await sock.sendMessage(ctx.jid, {
-      sticker: webpBuffer,
-    });
+    await sock.sendMessage(ctx.jid, { sticker: webpBuffer });
   } catch (err) {
     logger.error({ err }, "Sticker conversion failed");
-    await sock.sendMessage(ctx.jid, { text: "Sticker conversion failed. Please try again with a different image." });
+    await sock.sendMessage(ctx.jid, { text: "Sticker conversion failed. Please try again." });
   }
 }
 

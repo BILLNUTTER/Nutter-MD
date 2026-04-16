@@ -23,6 +23,7 @@ import {
   handleAntimention,
   handleBan,
   handleUnban,
+  handleSetPrefix,
 } from "./commands/group";
 
 const BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
@@ -147,6 +148,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     case "antimention": return handleAntimention(sock, msg, ctx, args);
     case "ban": return handleBan(sock, msg, ctx);
     case "unban": return handleUnban(sock, msg, ctx);
+    case "setprefix": return handleSetPrefix(sock, msg, ctx, args);
     default:
       await sock.sendMessage(jid, { text: `Unknown command: ${prefix}${cmd}. Use ${prefix}menu to see all commands.` });
   }

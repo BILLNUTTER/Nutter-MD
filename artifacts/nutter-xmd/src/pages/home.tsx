@@ -2,18 +2,16 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Copy, RefreshCw, QrCode, Hash, Smartphone, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { ApiError } from "@workspace/api-client-react";
 import { 
   usePairRequest, 
   useGetPairQr, 
   useGetPairStatus, 
-  useGetPairSession,
   useResetPairing,
   getGetPairQrQueryKey,
   getGetPairStatusQueryKey,
-  getGetPairSessionQueryKey
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +29,7 @@ export function HomePage() {
   const { toast } = useToast();
   const [mode, setMode] = useState<"code" | "qr">("code");
   const [pairCode, setPairCode] = useState<string | null>(null);
+  const [pairingToken, setPairingToken] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -48,8 +47,11 @@ export function HomePage() {
         const data = await r.json().catch(() => ({})) as { message?: string };
         throw new Error(data.message || `HTTP ${r.status}`);
       }
-      return r.json();
+      return r.json() as Promise<{ status: string; pairingToken?: string }>;
     }),
+    onSuccess: (data) => {
+      if (data.pairingToken) setPairingToken(data.pairingToken);
+    },
   });
 
   // Query status repeatedly while pairing is active
@@ -73,13 +75,21 @@ export function HomePage() {
     }
   });
 
-  // Fetch session once connected
-  const { data: sessionData, isLoading: isLoadingSession } = useGetPairSession({
-    query: {
-      enabled: isConnected,
-      refetchInterval: 2000,
-      queryKey: getGetPairSessionQueryKey(),
-    }
+  // Fetch session once connected, using pairing token for access control
+  const { data: sessionData, isLoading: isLoadingSession } = useQuery({
+    queryKey: ["pair-session", pairingToken],
+    enabled: isConnected && !!pairingToken,
+    refetchInterval: 2000,
+    queryFn: async () => {
+      const r = await fetch("/api/pair/session", {
+        headers: { "x-pairing-token": pairingToken! },
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({})) as { message?: string };
+        throw new Error(data.message || `HTTP ${r.status}`);
+      }
+      return r.json() as Promise<{ sessionId: string; phoneNumber: string | null }>;
+    },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -88,6 +98,8 @@ export function HomePage() {
         data: { phoneNumber: values.phoneNumber }
       });
       setPairCode(res.pairCode);
+      const resAny = res as unknown as Record<string, unknown>;
+      if (resAny["pairingToken"]) setPairingToken(resAny["pairingToken"] as string);
     } catch (err: unknown) {
       toast({
         variant: "destructive",
@@ -101,6 +113,7 @@ export function HomePage() {
     try {
       await resetPairing.mutateAsync();
       setPairCode(null);
+      setPairingToken(null);
       form.reset();
     } catch (err: unknown) {
       toast({
@@ -170,17 +183,16 @@ export function HomePage() {
                       <Skeleton className="h-10 flex-1" />
                     ) : (
                       <code className="flex-1 p-2 bg-muted rounded text-sm overflow-hidden text-ellipsis whitespace-nowrap font-mono text-primary/80">
-                        {(sessionData && 'sessionId' in sessionData ? sessionData.sessionId : null) || 'Waiting for session data...'}
+                        {sessionData?.sessionId || 'Waiting for session data...'}
                       </code>
                     )}
                     <Button 
                       variant="secondary" 
                       size="icon"
                       onClick={() => {
-                        const sid = sessionData && 'sessionId' in sessionData ? sessionData.sessionId : null;
-                        if (sid) copyToClipboard(sid, "Session ID");
+                        if (sessionData?.sessionId) copyToClipboard(sessionData.sessionId, "Session ID");
                       }}
-                      disabled={!(sessionData && 'sessionId' in sessionData && sessionData.sessionId)}
+                      disabled={!sessionData?.sessionId}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>

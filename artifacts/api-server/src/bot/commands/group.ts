@@ -169,4 +169,19 @@ export async function handleUnban(sock: WASocket, msg: proto.IWebMessageInfo, ct
   await sock.sendMessage(ctx.jid, { text: `Unbanned ${mentioned.length} user(s).` });
 }
 
+export async function handleSetPrefix(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can change the prefix." });
+    return;
+  }
+  const newPrefix = args[0]?.trim();
+  if (!newPrefix || newPrefix.length > 5) {
+    await sock.sendMessage(ctx.jid, { text: "Provide a prefix (1–5 chars): .setprefix !" });
+    return;
+  }
+  await ensureGroupSettings(ctx.jid);
+  await updateGroupSetting(ctx.jid, { customPrefix: newPrefix });
+  await sock.sendMessage(ctx.jid, { text: `Prefix changed to: ${newPrefix}` });
+}
+
 export { ensureGroupSettings };

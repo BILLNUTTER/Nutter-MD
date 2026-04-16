@@ -17,6 +17,7 @@ export interface PairingSessionState {
   qrDataUrl: string | null;
   qrExpiresAt: Date | null;
   sessionId: string | null;
+  pairingToken: string | null;
 }
 
 export const pairingState: PairingSessionState = {
@@ -26,7 +27,12 @@ export const pairingState: PairingSessionState = {
   qrDataUrl: null,
   qrExpiresAt: null,
   sessionId: null,
+  pairingToken: null,
 };
+
+function generatePairingToken(): string {
+  return `pt_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
 
 export function resetPairingState() {
   pairingState.status = "idle";
@@ -35,6 +41,7 @@ export function resetPairingState() {
   pairingState.qrDataUrl = null;
   pairingState.qrExpiresAt = null;
   pairingState.sessionId = null;
+  pairingState.pairingToken = null;
 }
 
 let activePairingSocket: unknown = null;
@@ -62,6 +69,7 @@ export async function startPairingSession(phoneNumber: string): Promise<string> 
   resetPairingState();
   pairingState.status = "connecting";
   pairingState.phoneNumber = phoneNumber;
+  pairingState.pairingToken = generatePairingToken();
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
@@ -151,6 +159,7 @@ export async function startQrSession(): Promise<void> {
 
   resetPairingState();
   pairingState.status = "connecting";
+  pairingState.pairingToken = generatePairingToken();
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
