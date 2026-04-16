@@ -8,6 +8,10 @@ export const groupSettingsTable = pgTable("group_settings", {
   antibadword: boolean("antibadword").notNull().default(false),
   antimention: boolean("antimention").notNull().default(false),
   customPrefix: text("custom_prefix"),
+  mute: boolean("mute").notNull().default(false),
+  welcomeEnabled: boolean("welcome_enabled").notNull().default(false),
+  welcomeMessage: text("welcome_message"),
+  autoReply: text("auto_reply"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

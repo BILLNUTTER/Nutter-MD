@@ -28,17 +28,29 @@ export async function handleMenu(sock: WASocket, _msg: proto.IWebMessageInfo, ct
     `${prefix}owner — Get owner contact\n` +
     `${prefix}settings — Current bot settings\n` +
     `${prefix}sticker — Convert image to sticker (reply to image)\n\n` +
+    `*Group Info*\n` +
+    `${prefix}groupinfo — Show group details & stats\n` +
+    `${prefix}tagall [msg] — Tag all members (admin only)\n\n` +
     `*Group Management* (Admin only)\n` +
     `${prefix}kick @user — Remove member\n` +
     `${prefix}add +number — Add member\n` +
     `${prefix}promote @user — Make admin\n` +
     `${prefix}demote @user — Remove admin\n` +
+    `${prefix}mute — Mute group (admins only can chat)\n` +
+    `${prefix}unmute — Unmute group\n` +
     `${prefix}antilink on/off — Block links\n` +
     `${prefix}antibadword on/off — Block bad words\n` +
     `${prefix}antimention on/off — Block mass mentions\n` +
     `${prefix}ban @user — Ban user from bot\n` +
     `${prefix}unban @user — Unban user\n` +
-    `${prefix}setprefix <char> — Change command prefix`;
+    `${prefix}setprefix <char> — Change command prefix\n\n` +
+    `*Welcome Messages* (Admin only)\n` +
+    `${prefix}welcome on/off — Enable/disable welcome messages\n` +
+    `${prefix}setwelcome <msg> — Set welcome text (use {name} & {group})\n\n` +
+    `*Auto-Reply* (Admin only)\n` +
+    `${prefix}autoreply add <trigger> | <response>\n` +
+    `${prefix}autoreply remove <trigger>\n` +
+    `${prefix}autoreply list`;
   await sock.sendMessage(ctx.jid, { text: menu });
 }
 
@@ -63,7 +75,17 @@ export async function handleSettings(sock: WASocket, _msg: proto.IWebMessageInfo
 
   let groupInfo = "";
   if (ctx.groupSettings) {
-    groupInfo = `\n\n*Group Protection*\nAntilink: ${ctx.groupSettings.antilink ? "ON" : "OFF"}\nAntibadword: ${ctx.groupSettings.antibadword ? "ON" : "OFF"}\nAntimention: ${ctx.groupSettings.antimention ? "ON" : "OFF"}\nCustom Prefix: ${ctx.groupSettings.customPrefix || prefix}`;
+    const s = ctx.groupSettings;
+    groupInfo =
+      `\n\n*Group Protection*\n` +
+      `Antilink: ${s.antilink ? "ON" : "OFF"}\n` +
+      `Antibadword: ${s.antibadword ? "ON" : "OFF"}\n` +
+      `Antimention: ${s.antimention ? "ON" : "OFF"}\n` +
+      `Mute: ${s.mute ? "ON" : "OFF"}\n` +
+      `Custom Prefix: ${s.customPrefix || prefix}\n\n` +
+      `*Welcome*\n` +
+      `Welcome Messages: ${s.welcomeEnabled ? "ON" : "OFF"}\n` +
+      `Welcome Text: ${s.welcomeMessage || "Default"}`;
   }
 
   const text = `*${botName} Settings*\n\nPrefix: ${prefix}\nOwner: ${ownerNumber}${groupInfo}`;

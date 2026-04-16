@@ -1,7 +1,7 @@
 import { Boom } from "@hapi/boom";
 import { logger } from "../lib/logger";
 import { loadSessionFromEnv } from "./session";
-import { handleMessage } from "./handler";
+import { handleMessage, handleGroupParticipantsUpdate } from "./handler";
 
 const RECONNECT_DELAY_MS = 5000;
 let reconnectAttempts = 0;
@@ -73,6 +73,14 @@ async function connectBot(sessionAuth: {
       } catch (err) {
         logger.error({ err, msgKey: msg.key }, "Error handling message");
       }
+    }
+  });
+
+  sock.ev.on("group-participants.update", async (update) => {
+    try {
+      await handleGroupParticipantsUpdate(sock, update);
+    } catch (err) {
+      logger.error({ err }, "Error handling group-participants.update");
     }
   });
 

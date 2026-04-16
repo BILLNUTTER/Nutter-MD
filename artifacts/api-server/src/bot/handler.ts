@@ -24,6 +24,13 @@ import {
   handleBan,
   handleUnban,
   handleSetPrefix,
+  handleTagAll,
+  handleGroupInfo,
+  handleMute,
+  handleUnmute,
+  handleWelcome,
+  handleSetWelcome,
+  handleAutoReply,
 } from "./commands/group";
 
 const BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
@@ -35,6 +42,7 @@ export interface CommandContext {
   isSenderGroupAdmin: boolean;
   isBotGroupAdmin: boolean;
   groupSettings: GroupSettings | null;
+  prefix: string;
 }
 
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
@@ -112,7 +120,23 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     }
   }
 
-  if (!body.startsWith(prefix)) return;
+  if (!body.startsWith(prefix)) {
+    if (isGroup && groupSettings?.autoReply) {
+      try {
+        const autoReplyMap: Record<string, string> = JSON.parse(groupSettings.autoReply);
+        const bodyLower = body.toLowerCase().trim();
+        const matched = Object.entries(autoReplyMap).find(([trigger]) =>
+          bodyLower.includes(trigger.toLowerCase())
+        );
+        if (matched) {
+          await sock.sendMessage(jid, { text: matched[1] });
+        }
+      } catch {
+        // Non-fatal: skip auto-reply if parsing fails
+      }
+    }
+    return;
+  }
 
   try {
     const [banned] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.userId, senderJid)).limit(1);
@@ -124,7 +148,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     // Non-fatal: continue if DB check fails
   }
 
-  const ctx: CommandContext = { jid, isOwner, isSenderGroupAdmin, isBotGroupAdmin, groupSettings };
+  const ctx: CommandContext = { jid, isOwner, isSenderGroupAdmin, isBotGroupAdmin, groupSettings, prefix };
   const commandText = body.slice(prefix.length).trim();
   const [command, ...args] = commandText.split(" ");
   const cmd = command.toLowerCase();
@@ -149,7 +173,47 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     case "ban": return handleBan(sock, msg, ctx);
     case "unban": return handleUnban(sock, msg, ctx);
     case "setprefix": return handleSetPrefix(sock, msg, ctx, args);
+    case "tagall": return handleTagAll(sock, msg, ctx, args);
+    case "groupinfo": return handleGroupInfo(sock, msg, ctx);
+    case "mute": return handleMute(sock, msg, ctx);
+    case "unmute": return handleUnmute(sock, msg, ctx);
+    case "welcome": return handleWelcome(sock, msg, ctx, args);
+    case "setwelcome": return handleSetWelcome(sock, msg, ctx, args);
+    case "autoreply": return handleAutoReply(sock, msg, ctx, args);
     default:
       await sock.sendMessage(jid, { text: `Unknown command: ${prefix}${cmd}. Use ${prefix}menu to see all commands.` });
+  }
+}
+
+export async function handleGroupParticipantsUpdate(
+  sock: WASocket,
+  update: { id: string; participants: Array<{ id: string } | string>; action: string }
+) {
+  if (update.action !== "add") return;
+
+  const groupId = update.id;
+  try {
+    const rows = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, groupId)).limit(1);
+    const settings = rows[0] ?? null;
+    if (!settings?.welcomeEnabled) return;
+
+    const groupMeta = await sock.groupMetadata(groupId);
+    const welcomeTemplate = settings.welcomeMessage || "Welcome to *{group}*, {name}! 🎉";
+
+    for (const participant of update.participants) {
+      const participantJid = typeof participant === "string" ? participant : participant.id;
+      const number = participantJid.split("@")[0];
+      const name = `@${number}`;
+      const welcomeText = welcomeTemplate
+        .replace(/\{name\}/gi, name)
+        .replace(/\{group\}/gi, groupMeta.subject);
+
+      await sock.sendMessage(groupId, {
+        text: welcomeText,
+        mentions: [participantJid],
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, groupId }, "Failed to send welcome message");
   }
 }

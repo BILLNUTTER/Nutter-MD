@@ -185,6 +185,10 @@ export async function handleUnban(sock: WASocket, msg: proto.IWebMessageInfo, ct
 }
 
 export async function handleSetPrefix(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.jid.endsWith("@g.us")) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in groups." });
+    return;
+  }
   if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(ctx.jid, { text: "Only group admins can change the prefix." });
     return;
@@ -197,6 +201,216 @@ export async function handleSetPrefix(sock: WASocket, _msg: proto.IWebMessageInf
   await ensureGroupSettings(ctx.jid);
   await updateGroupSetting(ctx.jid, { customPrefix: newPrefix });
   await sock.sendMessage(ctx.jid, { text: `Prefix changed to: ${newPrefix}` });
+}
+
+export async function handleTagAll(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.isBotGroupAdmin) {
+    await sock.sendMessage(ctx.jid, { text: "Bot must be admin to use tagall." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can use tagall." });
+    return;
+  }
+  try {
+    const groupMeta = await sock.groupMetadata(ctx.jid);
+    const participants = groupMeta.participants.map((p) => p.id);
+    const announcement = args.length > 0 ? args.join(" ") : "📢 Attention everyone!";
+    const mentions = participants.map((jid) => `@${jid.split("@")[0]}`).join(" ");
+    await sock.sendMessage(ctx.jid, {
+      text: `${announcement}\n\n${mentions}`,
+      mentions: participants,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to tagall");
+    await sock.sendMessage(ctx.jid, { text: "Failed to tag all members." });
+  }
+}
+
+export async function handleGroupInfo(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
+  try {
+    const groupMeta = await sock.groupMetadata(ctx.jid);
+    const adminCount = groupMeta.participants.filter(
+      (p) => p.admin === "admin" || p.admin === "superadmin"
+    ).length;
+    const createdAt = groupMeta.creation
+      ? new Date(groupMeta.creation * 1000).toLocaleDateString()
+      : "Unknown";
+
+    const settings = ctx.groupSettings;
+    const protections = [
+      settings?.antilink ? "Antilink" : null,
+      settings?.antibadword ? "Antibadword" : null,
+      settings?.antimention ? "Antimention" : null,
+      settings?.mute ? "Muted" : null,
+    ].filter(Boolean).join(", ") || "None";
+
+    const text =
+      `*Group Info*\n\n` +
+      `*Name:* ${groupMeta.subject}\n` +
+      `*Members:* ${groupMeta.participants.length}\n` +
+      `*Admins:* ${adminCount}\n` +
+      `*Created:* ${createdAt}\n` +
+      `*Description:* ${groupMeta.desc || "None"}\n` +
+      `*Active Protections:* ${protections}`;
+
+    await sock.sendMessage(ctx.jid, { text });
+  } catch (err) {
+    logger.error({ err }, "Failed to get group info");
+    await sock.sendMessage(ctx.jid, { text: "Failed to retrieve group info." });
+  }
+}
+
+export async function handleMute(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
+  if (!ctx.isBotGroupAdmin) {
+    await sock.sendMessage(ctx.jid, { text: "Bot must be admin to mute the group." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can mute the group." });
+    return;
+  }
+  try {
+    await sock.groupSettingUpdate(ctx.jid, "announcement");
+    await ensureGroupSettings(ctx.jid);
+    await updateGroupSetting(ctx.jid, { mute: true });
+    await sock.sendMessage(ctx.jid, { text: "🔇 Group muted. Only admins can send messages." });
+  } catch (err) {
+    logger.error({ err }, "Failed to mute group");
+    await sock.sendMessage(ctx.jid, { text: "Failed to mute group." });
+  }
+}
+
+export async function handleUnmute(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
+  if (!ctx.isBotGroupAdmin) {
+    await sock.sendMessage(ctx.jid, { text: "Bot must be admin to unmute the group." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can unmute the group." });
+    return;
+  }
+  try {
+    await sock.groupSettingUpdate(ctx.jid, "not_announcement");
+    await ensureGroupSettings(ctx.jid);
+    await updateGroupSetting(ctx.jid, { mute: false });
+    await sock.sendMessage(ctx.jid, { text: "🔊 Group unmuted. All members can send messages." });
+  } catch (err) {
+    logger.error({ err }, "Failed to unmute group");
+    await sock.sendMessage(ctx.jid, { text: "Failed to unmute group." });
+  }
+}
+
+export async function handleWelcome(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.jid.endsWith("@g.us")) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in groups." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can configure welcome messages." });
+    return;
+  }
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    await sock.sendMessage(ctx.jid, { text: `Usage: ${ctx.prefix}welcome on | ${ctx.prefix}welcome off` });
+    return;
+  }
+  const state = raw === "on";
+  await ensureGroupSettings(ctx.jid);
+  await updateGroupSetting(ctx.jid, { welcomeEnabled: state });
+  await sock.sendMessage(ctx.jid, {
+    text: `Welcome messages are now ${state ? "ON" : "OFF"}.${state ? `\n\nUse ${ctx.prefix}setwelcome <message> to set a custom message. Use {name} as placeholder for the new member's name.` : ""}`,
+  });
+}
+
+export async function handleSetWelcome(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.jid.endsWith("@g.us")) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in groups." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can set the welcome message." });
+    return;
+  }
+  const message = args.join(" ").trim();
+  if (!message) {
+    await sock.sendMessage(ctx.jid, { text: `Usage: ${ctx.prefix}setwelcome Welcome to the group, {name}! 🎉` });
+    return;
+  }
+  await ensureGroupSettings(ctx.jid);
+  await updateGroupSetting(ctx.jid, { welcomeMessage: message });
+  await sock.sendMessage(ctx.jid, { text: `Welcome message set:\n\n${message}` });
+}
+
+export async function handleAutoReply(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.jid.endsWith("@g.us")) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in groups." });
+    return;
+  }
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "Only group admins can manage auto-replies." });
+    return;
+  }
+
+  const subCmd = args[0]?.toLowerCase();
+
+  const settings = await ensureGroupSettings(ctx.jid);
+  let autoReplyMap: Record<string, string> = {};
+  try {
+    if (settings?.autoReply) autoReplyMap = JSON.parse(settings.autoReply);
+  } catch {
+    autoReplyMap = {};
+  }
+
+  if (subCmd === "list") {
+    const entries = Object.entries(autoReplyMap);
+    if (entries.length === 0) {
+      await sock.sendMessage(ctx.jid, { text: "No auto-replies configured for this group." });
+      return;
+    }
+    const list = entries.map(([k, v]) => `*${k}* → ${v}`).join("\n");
+    await sock.sendMessage(ctx.jid, { text: `*Auto-replies:*\n\n${list}` });
+    return;
+  }
+
+  if (subCmd === "add") {
+    const rest = args.slice(1).join(" ");
+    const separatorIdx = rest.indexOf("|");
+    if (separatorIdx === -1) {
+      await sock.sendMessage(ctx.jid, { text: `Usage: ${ctx.prefix}autoreply add <trigger> | <response>` });
+      return;
+    }
+    const trigger = rest.slice(0, separatorIdx).trim().toLowerCase();
+    const response = rest.slice(separatorIdx + 1).trim();
+    if (!trigger || !response) {
+      await sock.sendMessage(ctx.jid, { text: "Trigger and response cannot be empty." });
+      return;
+    }
+    autoReplyMap[trigger] = response;
+    await updateGroupSetting(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
+    await sock.sendMessage(ctx.jid, { text: `Auto-reply added:\n*${trigger}* → ${response}` });
+    return;
+  }
+
+  if (subCmd === "remove") {
+    const trigger = args.slice(1).join(" ").trim().toLowerCase();
+    if (!trigger) {
+      await sock.sendMessage(ctx.jid, { text: `Usage: ${ctx.prefix}autoreply remove <trigger>` });
+      return;
+    }
+    if (!autoReplyMap[trigger]) {
+      await sock.sendMessage(ctx.jid, { text: `No auto-reply found for: ${trigger}` });
+      return;
+    }
+    delete autoReplyMap[trigger];
+    await updateGroupSetting(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
+    await sock.sendMessage(ctx.jid, { text: `Auto-reply removed: ${trigger}` });
+    return;
+  }
+
+  await sock.sendMessage(ctx.jid, {
+    text: `Usage:\n${ctx.prefix}autoreply add <trigger> | <response>\n${ctx.prefix}autoreply remove <trigger>\n${ctx.prefix}autoreply list`,
+  });
 }
 
 export { ensureGroupSettings };
