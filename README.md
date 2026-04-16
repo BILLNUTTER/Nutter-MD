@@ -26,7 +26,7 @@ Visit the pairing page and link your WhatsApp number:
 
 Click the button below to fork this repository to your GitHub account:
 
-[Fork Nutter-MD on GitHub](https://github.com/BILLNUTTER/Nutter-MD/fork)
+[Fork Nutter-MD on GitHub](https://github.com/nutterxtech/Nutter-MD/fork)
 
 ### Step 3: Deploy to Heroku
 
@@ -94,7 +94,7 @@ You will be asked to fill in:
 
 ## Credits
 
-- Developer: [@BILLNUTTER](https://github.com/BILLNUTTER)
+- Developer: [@nutterxtech](https://github.com/nutterxtech)
 - Built with [Baileys](https://github.com/WhiskeySockets/Baileys)
 - Inspired by the WhatsApp MD bot community
 

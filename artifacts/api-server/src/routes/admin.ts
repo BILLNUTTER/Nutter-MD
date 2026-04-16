@@ -4,7 +4,7 @@ import { logger } from "../lib/logger";
 const router = Router();
 const GITHUB_API_BASE = "https://api.github.com";
 // Override with GITHUB_REPO_OWNER / GITHUB_REPO_NAME config vars on Heroku
-const REPO_OWNER = process.env["GITHUB_REPO_OWNER"] ?? "BILLNUTTER";
+const REPO_OWNER = process.env["GITHUB_REPO_OWNER"] ?? "nutterxtech";
 const REPO_NAME = process.env["GITHUB_REPO_NAME"] ?? "Nutter-MD";
 
 function requireAdminPassword(req: Request, res: Response, next: NextFunction) {
