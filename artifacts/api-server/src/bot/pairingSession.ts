@@ -57,7 +57,6 @@ export function getActivePairingSocket() {
 
 export async function startPairingSession(phoneNumber: string): Promise<string> {
   const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
-  const { default: QRCode } = await import("qrcode");
   const fs = await import("fs");
   const path = await import("path");
 
@@ -190,7 +189,8 @@ export async function startQrSession(): Promise<void> {
       pairingState.sessionId = encodeSessionToBase64(fileMap);
       // Extract phone number from JID once credentials are set (QR mode)
       if (!pairingState.phoneNumber && state.creds.me?.id) {
-        pairingState.phoneNumber = state.creds.me.id.split("@")[0] ?? null;
+        // Strip device suffix (e.g. "254712345678:5@s.whatsapp.net" → "254712345678")
+        pairingState.phoneNumber = state.creds.me.id.split("@")[0]?.split(":")[0] ?? null;
       }
     } catch (err) {
       logger.error({ err }, "Failed to serialize credentials");
@@ -217,7 +217,8 @@ export async function startQrSession(): Promise<void> {
       logger.info("WhatsApp QR session connected");
 
       // Send SESSION_ID directly to the user's WhatsApp DM
-      const phoneNum = pairingState.phoneNumber ?? state.creds.me?.id?.split("@")[0];
+      // Strip device suffix from JID (e.g. "254712345678:5@s.whatsapp.net" → "254712345678")
+      const phoneNum = pairingState.phoneNumber ?? state.creds.me?.id?.split("@")[0]?.split(":")[0];
       if (pairingState.sessionId && phoneNum) {
         const jid = `${phoneNum.replace(/[^0-9]/g, "")}@s.whatsapp.net`;
         const msg =
