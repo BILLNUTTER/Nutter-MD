@@ -72,6 +72,38 @@ export function invalidateGroupMetaCache(jid: string) {
   groupMetaCache.delete(jid);
 }
 
+/**
+ * Bulk-populate the group metadata cache from a record of groups (e.g. from
+ * sock.groupFetchAllParticipating()). Called once on connection-open so the
+ * very first message from any group hits the cache instead of calling the API.
+ */
+export function populateGroupMetaCache(
+  groups: Record<string, { subject: string; participants: Array<{ id: string; admin?: "admin" | "superadmin" | null }> }>
+) {
+  const expireAt = Date.now() + GROUP_META_TTL;
+  for (const [jid, meta] of Object.entries(groups)) {
+    groupMetaCache.set(jid, { subject: meta.subject, participants: meta.participants, expireAt });
+  }
+  return Object.keys(groups).length;
+}
+
+/**
+ * Upsert a single group into the cache. Used by groups.upsert / groups.update
+ * listeners to keep metadata current without waiting for the first message.
+ */
+export function upsertGroupMetaCache(
+  jid: string,
+  meta: { subject?: string; participants?: Array<{ id: string; admin?: "admin" | "superadmin" | null }> }
+) {
+  const existing = groupMetaCache.get(jid);
+  const updated: GroupMetaEntry = {
+    subject: meta.subject ?? existing?.subject ?? "",
+    participants: meta.participants ?? existing?.participants ?? [],
+    expireAt: Date.now() + GROUP_META_TTL,
+  };
+  groupMetaCache.set(jid, updated);
+}
+
 function printMessageActivity(opts: {
   msgType: string;
   pushName: string;

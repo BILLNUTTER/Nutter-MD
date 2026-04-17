@@ -2,7 +2,7 @@ import pino from "pino";
 import { Boom } from "@hapi/boom";
 import { logger } from "../lib/logger";
 import { loadSessionFromEnv } from "./session";
-import { handleMessage, handleStatusMessage, handleGroupParticipantsUpdate } from "./handler";
+import { handleMessage, handleStatusMessage, handleGroupParticipantsUpdate, populateGroupMetaCache, upsertGroupMetaCache } from "./handler";
 import { cacheMessage, popCachedMessage, getGroupSettings, getBotSettings } from "./store";
 import type { WASocket } from "@whiskeysockets/baileys";
 
@@ -163,6 +163,19 @@ async function connectBot(sessionAuth: {
         logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
       }
 
+      // Pre-populate group metadata cache so the FIRST message from any group
+      // is a cache hit (no API call). This is the same thing RAVEN-BOT's
+      // makeInMemoryStore achieves via store.bind(client.ev) + groups.upsert.
+      try {
+        const allGroups = await sock.groupFetchAllParticipating();
+        const count = populateGroupMetaCache(
+          allGroups as Record<string, { subject: string; participants: Array<{ id: string; admin?: "admin" | "superadmin" | null }> }>
+        );
+        logger.info({ groups: count }, "✅ Group metadata cache pre-populated");
+      } catch (err) {
+        logger.warn({ err }, "Could not pre-fetch group list — cache will warm on first message");
+      }
+
       void onFirstConnect(sock);
       return;
     }
@@ -315,6 +328,30 @@ async function connectBot(sessionAuth: {
       await handleGroupParticipantsUpdate(sock, update);
     } catch (err) {
       logger.error({ err }, "Error handling group update");
+    }
+  });
+
+  // ── Keep group metadata cache in sync (mirrors what RAVEN-BOT's store.bind does) ──
+  // groups.upsert fires when the bot joins a new group or on initial sync
+  sock.ev.on("groups.upsert", (groups) => {
+    for (const group of groups) {
+      upsertGroupMetaCache(group.id, {
+        subject: group.subject,
+        participants: group.participants as Array<{ id: string; admin?: "admin" | "superadmin" | null }>,
+      });
+    }
+    logger.info({ count: groups.length }, "📦 groups.upsert — cache updated");
+  });
+
+  // groups.update fires when subject, description, settings change
+  sock.ev.on("groups.update", (updates) => {
+    for (const update of updates) {
+      if (update.id) {
+        upsertGroupMetaCache(update.id, {
+          subject: update.subject,
+          participants: update.participants as Array<{ id: string; admin?: "admin" | "superadmin" | null }> | undefined,
+        });
+      }
     }
   });
 

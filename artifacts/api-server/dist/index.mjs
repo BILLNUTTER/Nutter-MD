@@ -33876,6 +33876,22 @@ async function getCachedGroupMeta(sock, jid) {
   groupMetaCache.set(jid, entry);
   return entry;
 }
+function populateGroupMetaCache(groups) {
+  const expireAt = Date.now() + GROUP_META_TTL;
+  for (const [jid, meta] of Object.entries(groups)) {
+    groupMetaCache.set(jid, { subject: meta.subject, participants: meta.participants, expireAt });
+  }
+  return Object.keys(groups).length;
+}
+function upsertGroupMetaCache(jid, meta) {
+  const existing = groupMetaCache.get(jid);
+  const updated = {
+    subject: meta.subject ?? existing?.subject ?? "",
+    participants: meta.participants ?? existing?.participants ?? [],
+    expireAt: Date.now() + GROUP_META_TTL
+  };
+  groupMetaCache.set(jid, updated);
+}
 function printMessageActivity(opts) {
   const botName = (process.env["BOT_NAME"] || "NUTTER-XMD").toUpperCase().split("").join(" ");
   const border = "\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557";
@@ -34962,6 +34978,15 @@ async function connectBot(sessionAuth) {
       } catch (err) {
         logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
       }
+      try {
+        const allGroups = await sock.groupFetchAllParticipating();
+        const count = populateGroupMetaCache(
+          allGroups
+        );
+        logger.info({ groups: count }, "\u2705 Group metadata cache pre-populated");
+      } catch (err) {
+        logger.warn({ err }, "Could not pre-fetch group list \u2014 cache will warm on first message");
+      }
       void onFirstConnect(sock);
       return;
     }
@@ -35081,6 +35106,25 @@ async function connectBot(sessionAuth) {
       await handleGroupParticipantsUpdate(sock, update);
     } catch (err) {
       logger.error({ err }, "Error handling group update");
+    }
+  });
+  sock.ev.on("groups.upsert", (groups) => {
+    for (const group of groups) {
+      upsertGroupMetaCache(group.id, {
+        subject: group.subject,
+        participants: group.participants
+      });
+    }
+    logger.info({ count: groups.length }, "\u{1F4E6} groups.upsert \u2014 cache updated");
+  });
+  sock.ev.on("groups.update", (updates) => {
+    for (const update of updates) {
+      if (update.id) {
+        upsertGroupMetaCache(update.id, {
+          subject: update.subject,
+          participants: update.participants
+        });
+      }
     }
   });
   sock.ev.on("call", async (calls) => {
