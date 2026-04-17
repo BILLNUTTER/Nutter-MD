@@ -2,6 +2,93 @@ import type { WASocket, proto } from "@whiskeysockets/baileys";
 import type { CommandContext } from "../handler";
 import { getBotSettings } from "../store";
 import { logger } from "../../lib/logger";
+import fs from "fs";
+import path from "path";
+
+// ── Menu image — bundled in src/bot/assets/ and copied to dist/assets/ ─────────
+function getMenuImageBuffer(): Buffer | null {
+  try {
+    const assetPath = path.join(__dirname, "assets", "menu.jpg");
+    return fs.readFileSync(assetPath);
+  } catch {
+    return null;
+  }
+}
+
+// ── Menu category definitions ────────────────────────────────────────────────────
+const MENU_CATEGORIES = [
+  {
+    icon: "🤖",
+    name: "AI",
+    commands: ["gpt", "gemini", "deepseek", "blackbox", "code", "analyze", "summarize", "translate", "recipe", "story", "teach", "generate"],
+  },
+  {
+    icon: "💾",
+    name: "DOWNLOADS",
+    commands: ["youtube", "song", "tiktok", "instagram", "twitter", "facebook", "gdrive", "mediafire", "image"],
+  },
+  {
+    icon: "🎵",
+    name: "AUDIO",
+    commands: ["tomp3", "toptt", "bass", "earrape", "reverse", "robot", "deep"],
+  },
+  {
+    icon: "😊",
+    name: "FUN",
+    commands: ["meme", "joke", "quote", "trivia", "8ball", "ship", "love", "hug"],
+  },
+  {
+    icon: "🛡️",
+    name: "GROUP",
+    commands: ["kick", "add", "promote", "demote", "mute", "unmute", "antilink", "tagall", "groupinfo"],
+  },
+  {
+    icon: "⚙️",
+    name: "TOOLS",
+    commands: ["sticker", "ping", "alive", "menu", "owner", "settings", "restart", "setprefix"],
+  },
+  {
+    icon: "🔒",
+    name: "SECURITY",
+    commands: ["antibadword", "antimention", "antidelete", "ban", "unban"],
+  },
+  {
+    icon: "📊",
+    name: "STATUS",
+    commands: ["autoviewstatus", "autolikestatus", "statusemoji"],
+  },
+  {
+    icon: "🎉",
+    name: "EVENTS",
+    commands: ["welcome", "setwelcome", "autoreply"],
+  },
+];
+
+const TOTAL_COMMANDS = MENU_CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
+
+function buildMenuText(prefix: string, pushName: string): string {
+  const now = new Date();
+  const dateStr = now.toLocaleString("en-US", {
+    weekday: "short", year: "numeric", month: "short",
+    day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+  const header =
+    `──────── [ NUTTER-XMD ] ─────────\n\n` +
+    `✳ | TOTAL COMMANDS: ${TOTAL_COMMANDS}\n` +
+    `✳ | PREFIX: ${prefix}\n` +
+    `✳ | USER: ${pushName}\n` +
+    `✳ | DATE: ${dateStr}`;
+
+  const categories = MENU_CATEGORIES.map(({ icon, name, commands }) => {
+    const rows = commands.map((cmd) => `│↪→. ${prefix}${cmd}`).join("\n");
+    return `\n\n──── 「 ${icon} ${name} 」 ────→\n${rows}\n└──────────────→`;
+  }).join("");
+
+  return header + categories;
+}
+
+// ── Command handlers ──────────────────────────────────────────────────────────────
 
 export async function handlePing(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
   const start = Date.now();
@@ -15,53 +102,35 @@ export async function handleAlive(sock: WASocket, _msg: proto.IWebMessageInfo, c
   const hours = Math.floor(uptime / 3600);
   const minutes = Math.floor((uptime % 3600) / 60);
   const seconds = Math.floor(uptime % 60);
-  const text = `*NUTTER-XMD* ⚡\n\n*Status:* Online\n*Uptime:* ${hours}h ${minutes}m ${seconds}s\n*Version:* 1.0.0`;
+  const text = `*NUTTER-XMD* ⚡\n\n*Status:* Online\n*Uptime:* ${hours}h ${minutes}m ${seconds}s\n*Version:* 9.1.3`;
   await sock.sendMessage(ctx.jid, { text });
 }
 
-export async function handleMenu(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, prefix: string) {
-  const botName = process.env["BOT_NAME"] || "NUTTER-XMD";
-  const menu = `*${botName}* — Command Menu\n\n` +
-    `*General*\n` +
-    `${prefix}ping — Check bot latency\n` +
-    `${prefix}alive — Bot uptime & status\n` +
-    `${prefix}menu — Show this menu\n` +
-    `${prefix}owner — Get owner contact\n` +
-    `${prefix}settings — Current bot settings\n` +
-    `${prefix}sticker — Convert image to sticker (reply to image)\n` +
-    `${prefix}restart — Restart bot (owner only)\n\n` +
-    `*Status (Owner only)*\n` +
-    `${prefix}autoviewstatus on/off — Auto-view contacts' statuses\n` +
-    `${prefix}autolikestatus on/off — Auto-react to statuses\n` +
-    `${prefix}statusemoji <emoji> — Set reaction emoji (e.g. ❤️,🔥,😍)\n\n` +
-    `*Group Info*\n` +
-    `${prefix}groupinfo — Show group details & stats\n` +
-    `${prefix}tagall [msg] — Tag all members (admin only)\n\n` +
-    `*Group Management* (Admin only)\n` +
-    `${prefix}kick @user — Remove member\n` +
-    `${prefix}add +number — Add member\n` +
-    `${prefix}promote @user — Make admin\n` +
-    `${prefix}demote @user — Remove admin\n` +
-    `${prefix}mute — Mute group (admins only can chat)\n` +
-    `${prefix}unmute — Unmute group\n` +
-    `${prefix}antilink on/off — Block links\n` +
-    `${prefix}antibadword delete/kick/off — Block bad words\n` +
-    `${prefix}setbadwords <w1,w2> — Set custom bad words list\n` +
-    `${prefix}setbadwords list — Show current bad words\n` +
-    `${prefix}setbadwords reset — Restore default list\n` +
-    `${prefix}antimention on/off — Block mass mentions\n` +
-    `${prefix}antidelete on/off — Forward deleted msgs to owner DM\n` +
-    `${prefix}ban @user — Ban user from bot\n` +
-    `${prefix}unban @user — Unban user\n` +
-    `${prefix}setprefix <char> — Change command prefix\n\n` +
-    `*Welcome Messages* (Admin only)\n` +
-    `${prefix}welcome on/off — Enable/disable welcome messages\n` +
-    `${prefix}setwelcome <msg> — Set welcome text (use {name} & {group})\n\n` +
-    `*Auto-Reply* (Admin only)\n` +
-    `${prefix}autoreply add <trigger> | <response>\n` +
-    `${prefix}autoreply remove <trigger>\n` +
-    `${prefix}autoreply list`;
-  await sock.sendMessage(ctx.jid, { text: menu });
+export async function handleMenu(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext, prefix: string) {
+  const senderJid = msg.key.participant || (msg.key.fromMe ? (sock.user?.id || "") : (msg.key.remoteJid || ""));
+  const pushName = msg.pushName || senderJid.split("@")[0].split(":")[0];
+
+  // 1. Send the menu image
+  const imgBuf = getMenuImageBuffer();
+  if (imgBuf) {
+    try {
+      await sock.sendMessage(ctx.jid, {
+        image: imgBuf,
+        caption: "",
+        mimetype: "image/jpeg",
+      });
+    } catch (err) {
+      logger.warn({ err }, "Could not send menu image");
+    }
+  }
+
+  // 2. Send the formatted text menu with @mention
+  const menuText = `Hey @${senderJid.split("@")[0]} 🤖\n\n` + buildMenuText(prefix, pushName);
+
+  await sock.sendMessage(ctx.jid, {
+    text: menuText,
+    mentions: [senderJid],
+  });
 }
 
 export async function handleOwner(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
@@ -129,15 +198,15 @@ async function downloadToBuffer(mediaMsg: object, type: "image" | "video"): Prom
 
 async function extractVideoFirstFrame(videoBuffer: Buffer): Promise<Buffer> {
   const os = await import("os");
-  const path = await import("path");
-  const fs = await import("fs");
+  const pathMod = await import("path");
+  const fsMod = await import("fs");
   const { spawn } = await import("child_process");
 
   const tmpDir = os.default.tmpdir();
-  const inputPath = path.default.join(tmpDir, `nutter_vid_${Date.now()}.mp4`);
-  const outputPath = path.default.join(tmpDir, `nutter_frame_${Date.now()}.png`);
+  const inputPath = pathMod.default.join(tmpDir, `nutter_vid_${Date.now()}.mp4`);
+  const outputPath = pathMod.default.join(tmpDir, `nutter_frame_${Date.now()}.png`);
 
-  fs.default.writeFileSync(inputPath, videoBuffer);
+  fsMod.default.writeFileSync(inputPath, videoBuffer);
 
   await new Promise<void>((resolve, reject) => {
     const proc = spawn("ffmpeg", [
@@ -155,9 +224,9 @@ async function extractVideoFirstFrame(videoBuffer: Buffer): Promise<Buffer> {
     });
   });
 
-  const frameBuffer = fs.default.readFileSync(outputPath);
-  fs.default.rmSync(inputPath, { force: true });
-  fs.default.rmSync(outputPath, { force: true });
+  const frameBuffer = fsMod.default.readFileSync(outputPath);
+  fsMod.default.rmSync(inputPath, { force: true });
+  fsMod.default.rmSync(outputPath, { force: true });
   return frameBuffer;
 }
 

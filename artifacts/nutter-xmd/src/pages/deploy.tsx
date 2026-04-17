@@ -48,10 +48,10 @@ export function DeployPage() {
   const forkVerified = !!(verificationData?.forked);
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row gap-10 lg:gap-16 w-full">
+    <div className="flex-1 flex flex-col gap-10 w-full max-w-2xl mx-auto">
 
-      {/* ── Left: Info panel ───────────────────────────────────────────────────── */}
-      <aside className="lg:w-5/12 flex flex-col gap-8 lg:sticky lg:top-24 lg:self-start pt-2">
+      {/* ── Top: NUTTER-XMD Description ─────────────────────────────────────── */}
+      <div className="flex flex-col gap-8 pt-2">
         <div className="space-y-4">
           <div className="text-6xl select-none leading-none">🇰🇪</div>
           <div>
@@ -66,7 +66,7 @@ export function DeployPage() {
 
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">What you'll need</p>
-          <ul className="space-y-2.5">
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {REQUIREMENTS.map((r) => (
               <li key={r.label} className="flex items-center gap-3 text-sm text-muted-foreground">
                 <span className="text-base shrink-0">{r.icon}</span>
@@ -90,10 +90,10 @@ export function DeployPage() {
             ))}
           </ol>
         </div>
-      </aside>
+      </div>
 
-      {/* ── Right: Action cards ─────────────────────────────────────────────────── */}
-      <div className="lg:w-7/12 space-y-5">
+      {/* ── Bottom: Action cards (input fields / deploy) ────────────────────── */}
+      <div className="space-y-5">
 
         {/* Card 1 — Verify fork */}
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">

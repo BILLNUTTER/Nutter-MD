@@ -14,6 +14,18 @@ async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
+  // Copy static assets (menu image, etc.) into dist so they're available at runtime
+  const { cp, mkdir } = await import("node:fs/promises");
+  const assetsDir = path.resolve(artifactDir, "src/bot/assets");
+  const distAssetsDir = path.resolve(distDir, "assets");
+  try {
+    await mkdir(distAssetsDir, { recursive: true });
+    await cp(assetsDir, distAssetsDir, { recursive: true });
+    console.log("[build] Copied bot assets → dist/assets/");
+  } catch (err) {
+    console.warn("[build] No bot assets found, skipping:", err.message);
+  }
+
   await esbuild({
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
