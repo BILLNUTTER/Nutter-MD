@@ -1,0 +1,59 @@
+Building on the Heroku-24 stack
+-----> Using buildpack: heroku/nodejs
+-----> Node.js app detected
+       
+-----> Creating runtime environment
+       
+       NPM_CONFIG_LOGLEVEL=error
+       NODE_VERBOSE=false
+       NODE_ENV=production
+       NODE_MODULES_CACHE=true
+       
+-----> Installing binaries
+       engines.node (package.json):   20.x
+       engines.npm (package.json):    unspecified (use default)
+       engines.pnpm (package.json):   unspecified (use default)
+       
+       Resolving node version 20.x...
+       Downloading and installing node 20.20.2...
+       Validating checksum
+       Using default npm version: 10.8.2
+       Downloading and installing pnpm (latest)
+       Using pnpm 10.33.0
+        !     Default pnpm version used
+       
+              A pnpm lockfile (pnpm-lock.yaml) was detected but no specific version of pnpm was defined in package.json in either of the following fields:
+              - "packageManager"
+              - "engines.pnpm"
+       
+              Without a specific version defined, this build will use "pnpm@latest" by default. We highly recommend setting an explicit version
+              of pnpm to improve the reliability of your builds.
+              https://devcenter.heroku.com/articles/nodejs-support
+       
+       
+-----> Restoring cache
+       - pnpm cache
+       
+-----> Installing dependencies
+       Running 'pnpm install' with pnpm-lock.yaml
+        ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json
+       
+       Note that in CI environments this setting is true by default. If you still need to run install in such cases, use "pnpm install --no-frozen-lockfile"
+       
+         Failure reason:
+         specifiers in the lockfile don't match specifiers in package.json:
+       * 2 dependencies were added: @whiskeysockets/baileys@7.0.0-rc.9, thread-stream@3.1.0
+       
+-----> Build failed
+       
+       We're sorry this build is failing! You can troubleshoot common issues here:
+       https://devcenter.heroku.com/articles/troubleshooting-node-deploys
+       
+       If you're stuck, please submit a ticket so we can help:
+       https://help.heroku.com/
+       
+       Love,
+       Heroku
+       
+ !     Push rejected, failed to compile Node.js app.
+ !     Push failed

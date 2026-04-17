@@ -5,15 +5,12 @@
   "engines": {
     "node": "20.x"
   },
+  "packageManager": "pnpm@10.26.1",
   "scripts": {
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "heroku-postbuild": "echo 'dist already committed — skipping build'"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "7.0.0-rc.9",
-    "thread-stream": "3.1.0"
+    "heroku-postbuild": "pnpm --filter @workspace/nutter-xmd run build && pnpm --filter @workspace/api-server run build"
   },
   "private": true,
   "devDependencies": {

@@ -10,9 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY package.json ./
-
-RUN npm install --production
+RUN npm install @whiskeysockets/baileys@7.0.0-rc.9 thread-stream@3.1.0
 
 COPY artifacts/api-server/dist ./artifacts/api-server/dist
 
