@@ -21,10 +21,6 @@
       "description": "Your WhatsApp phone number in international format (e.g. 254712345678). This is the number that will be the bot owner.",
       "required": true
     },
-    "DATABASE_URL": {
-      "description": "PostgreSQL connection string (auto-populated by the Heroku PostgreSQL add-on).",
-      "required": true
-    },
     "BOT_NAME": {
       "description": "The name your bot will display.",
       "value": "NUTTER-XMD",
@@ -33,6 +29,10 @@
     "PREFIX": {
       "description": "The command prefix character (e.g. . or !). Default is dot (.).",
       "value": ".",
+      "required": false
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub personal access token (optional but strongly recommended for the admin fork list). Without it the GitHub API is rate-limited to 60 requests/hour on shared Heroku IPs, which causes the admin dashboard to fail. Create one at github.com/settings/tokens — no special scopes needed for public repos.",
       "required": false
     },
     "NODE_ENV": {

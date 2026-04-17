@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ShieldAlert, RefreshCw, GitFork, Github, Clock, Search, Lock } from "lucide-react";
+import { ShieldAlert, RefreshCw, GitFork, Github, Clock, Lock, AlertTriangle } from "lucide-react";
 import { useGetAdminForks, ApiError } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,6 +135,24 @@ export function AdminPage() {
                     Loading forks...
                   </TableCell>
                 </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-40 text-center">
+                    <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
+                      <AlertTriangle className="h-8 w-8 text-destructive/70" />
+                      <p className="font-medium text-destructive">Failed to load forks</p>
+                      <p className="text-sm text-muted-foreground">
+                        {error instanceof ApiError ? error.message : "GitHub API request failed."}
+                      </p>
+                      <p className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2 border border-border text-left">
+                        <strong>Tip:</strong> Without a <code>GITHUB_TOKEN</code> env var, GitHub limits API calls to 60/hour on shared IPs. Set a token (no special scopes needed for public repos) to raise the limit to 5,000/hour.
+                      </p>
+                      <Button variant="outline" size="sm" onClick={() => refetch()}>
+                        <RefreshCw className="h-3.5 w-3.5 mr-2" /> Retry
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ) : !data?.forks || data.forks.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="h-32 text-center text-muted-foreground">
@@ -175,7 +193,7 @@ export function AdminPage() {
                         className="inline-flex items-center gap-1.5 text-sm font-mono bg-muted/50 px-2 py-1 rounded hover:bg-primary/10 hover:text-primary transition-colors border border-border"
                       >
                         <GitFork className="h-3.5 w-3.5" />
-                        {fork.login}/NUTTER-XMD
+                        {fork.login}/Nutter-MD
                       </a>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
