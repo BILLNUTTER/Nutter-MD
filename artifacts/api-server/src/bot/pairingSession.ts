@@ -192,15 +192,16 @@ export async function startPairingSession(
 
       if (sessionId) {
         const jid = `${cleanNumber}@s.whatsapp.net`;
-        const msg =
+        const infoMsg =
           `*NUTTER-XMD — Your Session ID*\n\n` +
-          `Your WhatsApp account is now linked. Copy the SESSION_ID below and paste it as the ` +
-          `SESSION_ID environment variable when deploying to Heroku:\n\n` +
-          `${sessionId}\n\n` +
-          `_Keep this private — anyone with it can control your bot._`;
+          `Your WhatsApp account is now linked! ✅\n\n` +
+          `Your SESSION_ID is in the next message. Copy it and paste it as the ` +
+          `*SESSION_ID* environment variable when deploying to Heroku.\n\n` +
+          `_Keep it private — anyone with it can control your bot._`;
         try {
-          await sock.sendMessage(jid, { text: msg });
-          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
+          await sock.sendMessage(jid, { text: infoMsg });
+          await sock.sendMessage(jid, { text: sessionId });
+          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM (2 messages)");
         } catch (err) {
           logger.error({ err }, "Failed to send SESSION_ID to user DM");
         }
@@ -359,15 +360,16 @@ export async function startQrSession(attempt = 0): Promise<void> {
       const phoneNum = pairingState.phoneNumber ?? state.creds.me?.id?.split("@")[0]?.split(":")[0];
       if (sessionId && phoneNum) {
         const jid = `${phoneNum.replace(/[^0-9]/g, "")}@s.whatsapp.net`;
-        const msg =
+        const infoMsg =
           `*NUTTER-XMD — Your Session ID*\n\n` +
-          `Your WhatsApp account is now linked. Copy the SESSION_ID below and paste it as the ` +
-          `SESSION_ID environment variable when deploying to Heroku:\n\n` +
-          `${sessionId}\n\n` +
-          `_Keep this private — anyone with it can control your bot._`;
+          `Your WhatsApp account is now linked! ✅\n\n` +
+          `Your SESSION_ID is in the next message. Copy it and paste it as the ` +
+          `*SESSION_ID* environment variable when deploying to Heroku.\n\n` +
+          `_Keep it private — anyone with it can control your bot._`;
         try {
-          await sock.sendMessage(jid, { text: msg });
-          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM");
+          await sock.sendMessage(jid, { text: infoMsg });
+          await sock.sendMessage(jid, { text: sessionId });
+          logger.info({ jid }, "SESSION_ID sent to user WhatsApp DM (2 messages)");
         } catch (err) {
           logger.error({ err }, "Failed to send SESSION_ID to user DM");
         }
