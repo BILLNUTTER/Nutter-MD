@@ -34482,7 +34482,11 @@ async function startBot() {
   await connectBot(sessionAuth);
 }
 async function connectBot(sessionAuth) {
-  const { default: makeWASocket, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
+  const {
+    default: makeWASocket,
+    DisconnectReason,
+    Browsers
+  } = await import("@whiskeysockets/baileys");
   const { default: NodeCache } = await Promise.resolve().then(() => __toESM(require_node_cache2(), 1));
   const msgRetryCounterCache = new NodeCache();
   const sock = makeWASocket({
@@ -34493,26 +34497,41 @@ async function connectBot(sessionAuth) {
     logger: silentLogger
   });
   sock.ev.on("creds.update", sessionAuth.saveCreds);
-  sock.ev.on("connection.update", async (update) => {
+  sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "open") {
       reconnectAttempts = 0;
       logger.info("\u2705 NUTTER-XMD connected to WhatsApp");
+      return;
     }
     if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      const { DisconnectReason: DR } = await import("@whiskeysockets/baileys");
-      if (reason === DR.loggedOut) {
+      const boom = lastDisconnect?.error;
+      const reason = boom?.output?.statusCode;
+      const message = boom?.message ?? "unknown";
+      logger.warn(
+        { reason, message },
+        `Connection closed \u2014 reason ${reason} (${message})`
+      );
+      if (reason === DisconnectReason.restartRequired) {
+        logger.info("Restart required \u2014 reconnecting immediately");
+        void connectBot(sessionAuth);
+        return;
+      }
+      if (reason === DisconnectReason.loggedOut) {
         logger.error("\u274C Bot logged out. Generate a new SESSION_ID from the pairing page.");
         return;
       }
+      if (reason === 403) {
+        logger.error("\u274C Session rejected (403). Generate a new SESSION_ID from the pairing page.");
+        return;
+      }
       if (reconnectAttempts >= MAX_RECONNECTS) {
-        logger.error("\u274C Max reconnect attempts reached. Exiting.");
+        logger.error({ reason }, "\u274C Max reconnect attempts reached. Exiting.");
         process.exit(1);
       }
       reconnectAttempts++;
       logger.warn(`\u{1F504} Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECTS})`);
-      setTimeout(() => connectBot(sessionAuth), RECONNECT_DELAY_MS);
+      setTimeout(() => void connectBot(sessionAuth), RECONNECT_DELAY_MS);
     }
   });
   sock.ev.on("messages.upsert", async ({ messages, type }) => {

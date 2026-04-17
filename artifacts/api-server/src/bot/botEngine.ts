@@ -25,9 +25,13 @@ async function connectBot(sessionAuth: {
   state: { creds: unknown; keys: unknown };
   saveCreds: () => Promise<void>;
 }) {
-  const { default: makeWASocket, DisconnectReason, Browsers } = await import("@whiskeysockets/baileys");
-  const { default: NodeCache } = await import("node-cache");
+  const {
+    default: makeWASocket,
+    DisconnectReason,
+    Browsers,
+  } = await import("@whiskeysockets/baileys");
 
+  const { default: NodeCache } = await import("node-cache");
   const msgRetryCounterCache = new NodeCache();
 
   const sock = makeWASocket({
@@ -40,31 +44,52 @@ async function connectBot(sessionAuth: {
 
   sock.ev.on("creds.update", sessionAuth.saveCreds);
 
-  sock.ev.on("connection.update", async (update) => {
+  sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect } = update;
 
     if (connection === "open") {
       reconnectAttempts = 0;
       logger.info("✅ NUTTER-XMD connected to WhatsApp");
+      return;
     }
 
     if (connection === "close") {
-      const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const { DisconnectReason: DR } = await import("@whiskeysockets/baileys");
+      const boom = lastDisconnect?.error as Boom | undefined;
+      const reason = boom?.output?.statusCode;
+      const message = boom?.message ?? "unknown";
 
-      if (reason === DR.loggedOut) {
+      logger.warn(
+        { reason, message },
+        `Connection closed — reason ${reason} (${message})`
+      );
+
+      // 515 = restart required: reconnect immediately, no delay
+      if (reason === DisconnectReason.restartRequired) {
+        logger.info("Restart required — reconnecting immediately");
+        void connectBot(sessionAuth);
+        return;
+      }
+
+      // 401 = logged out: session is dead, user must re-pair
+      if (reason === DisconnectReason.loggedOut) {
         logger.error("❌ Bot logged out. Generate a new SESSION_ID from the pairing page.");
         return;
       }
 
+      // 403 = forbidden: account banned or invalid session
+      if (reason === 403) {
+        logger.error("❌ Session rejected (403). Generate a new SESSION_ID from the pairing page.");
+        return;
+      }
+
       if (reconnectAttempts >= MAX_RECONNECTS) {
-        logger.error("❌ Max reconnect attempts reached. Exiting.");
+        logger.error({ reason }, "❌ Max reconnect attempts reached. Exiting.");
         process.exit(1);
       }
 
       reconnectAttempts++;
       logger.warn(`🔄 Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECTS})`);
-      setTimeout(() => connectBot(sessionAuth), RECONNECT_DELAY_MS);
+      setTimeout(() => void connectBot(sessionAuth), RECONNECT_DELAY_MS);
     }
   });
 
