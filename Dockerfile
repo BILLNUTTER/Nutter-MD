@@ -4,6 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq > /dev/null 2>&1 \
     && apt-get install -y -qq --no-install-recommends \
+        ca-certificates \
         git \
         python3 \
         make \
