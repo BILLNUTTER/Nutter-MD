@@ -5844,10 +5844,11 @@ async function handleGroupParticipantsUpdate(sock, update) {
 }
 
 // src/bot/botEngine.ts
+var MAX_RECONNECTS = 2;
 var RECONNECT_DELAY_MS = 5e3;
-var reconnectAttempts = 0;
-var MAX_RECONNECTS = 10;
 var silentLogger = (0, import_pino2.default)({ level: "silent" });
+var failureCount = 0;
+var hasSentWelcome = false;
 async function startBot() {
   const sessionAuth = await loadSessionFromEnv();
   if (!sessionAuth) {
@@ -5856,6 +5857,53 @@ async function startBot() {
   }
   logger.info("Starting NUTTER-XMD bot engine...");
   await connectBot(sessionAuth);
+}
+async function onFirstConnect(sock) {
+  if (hasSentWelcome) return;
+  hasSentWelcome = true;
+  const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/\D/g, "");
+  const mode = (process.env["BOT_MODE"] || "public").toLowerCase();
+  const prefix = process.env["PREFIX"] || ".";
+  if (ownerNumber) {
+    const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+    const welcome = [
+      `*\xB0\u2550\u2550\u2550\u2550\u2550 NUTTER-XMD \u2550\u2550\u2550\u2550\u2550\xB0*`,
+      ``,
+      `   \u1D0D\u1D0F\u1D05\u1D07   \u203A *${mode}*`,
+      `   \u1D18\u0280\u1D07\u0493\u026Ax  \u203A *[ ${prefix} ]*`,
+      ``,
+      `*\xB0\u2550\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2550\xB0*`
+    ].join("\n");
+    try {
+      await sock.sendMessage(ownerJid, { text: welcome });
+      logger.info("\u2705 Sent welcome message to owner");
+    } catch (err) {
+      logger.warn({ err }, "Could not send welcome message to owner");
+    }
+  } else {
+    logger.warn("OWNER_NUMBER not set \u2014 skipping welcome message");
+  }
+  try {
+    await sock.groupAcceptInvite("JsKmQMpECJMHyxucHquF15");
+    logger.info("\u2705 Auto-joined NUTTER-XMD support group");
+  } catch {
+    logger.info("Support group: already joined or invite expired");
+  }
+  try {
+    const channelJid = "0029VbCcIrFEAKWNxpi8qR2V@newsletter";
+    const s = sock;
+    if (typeof s["followNewsletter"] === "function") {
+      await s["followNewsletter"](channelJid);
+      logger.info("\u2705 Auto-followed NUTTER-XMD channel");
+    } else if (typeof s["newsletterFollow"] === "function") {
+      await s["newsletterFollow"](channelJid);
+      logger.info("\u2705 Auto-followed NUTTER-XMD channel");
+    } else {
+      logger.info("Channel follow not available in this Baileys build \u2014 skipping");
+    }
+  } catch {
+    logger.info("Channel: already following or not available");
+  }
 }
 async function connectBot(sessionAuth) {
   const {
@@ -5886,20 +5934,18 @@ async function connectBot(sessionAuth) {
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "open") {
-      reconnectAttempts = 0;
+      failureCount = 0;
       logger.info("\u2705 NUTTER-XMD connected to WhatsApp");
+      void onFirstConnect(sock);
       return;
     }
     if (connection === "close") {
       const boom = lastDisconnect?.error;
       const reason = boom?.output?.statusCode;
       const message = boom?.message ?? "unknown";
-      logger.warn(
-        { reason, message },
-        `Connection closed \u2014 reason ${reason} (${message})`
-      );
+      logger.warn({ reason, message }, `Connection closed \u2014 reason ${reason} (${message})`);
       if (reason === DisconnectReason.restartRequired) {
-        logger.info("Restart required \u2014 reconnecting immediately");
+        logger.info("Restart required by server \u2014 reconnecting immediately");
         void connectBot(sessionAuth);
         return;
       }
@@ -5911,12 +5957,15 @@ async function connectBot(sessionAuth) {
         logger.error("\u274C Session rejected (403). Generate a new SESSION_ID from the pairing page.");
         return;
       }
-      if (reconnectAttempts >= MAX_RECONNECTS) {
-        logger.error({ reason }, "\u274C Max reconnect attempts reached. Exiting.");
+      failureCount++;
+      if (failureCount > MAX_RECONNECTS) {
+        logger.error(
+          { reason, failureCount },
+          `\u274C Failed ${MAX_RECONNECTS} times (reason ${reason}). Bot stopped. Check your SESSION_ID or redeploy.`
+        );
         process.exit(1);
       }
-      reconnectAttempts++;
-      logger.warn(`\u{1F504} Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECTS})`);
+      logger.warn(`\u{1F504} Reconnecting after failure... (${failureCount}/${MAX_RECONNECTS})`);
       setTimeout(() => void connectBot(sessionAuth), RECONNECT_DELAY_MS);
     }
   });
