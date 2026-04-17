@@ -2,17 +2,23 @@ FROM node:20-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-    git \
-    python3 \
-    make \
-    g++ \
-    libssl-dev \
+RUN apt-get update -qq > /dev/null 2>&1 \
+    && apt-get install -y -qq --no-install-recommends \
+        git \
+        python3 \
+        make \
+        g++ \
+        libssl-dev \
+        > /dev/null 2>&1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN npm install --loglevel=error @whiskeysockets/baileys@7.0.0-rc.9 thread-stream@3.1.0
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+RUN npm install --loglevel=error --no-fund --no-audit \
+    @whiskeysockets/baileys@7.0.0-rc.9 \
+    thread-stream@3.1.0
 
 COPY artifacts/api-server/dist ./artifacts/api-server/dist
 
