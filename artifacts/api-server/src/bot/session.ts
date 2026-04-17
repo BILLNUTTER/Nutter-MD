@@ -69,17 +69,42 @@ export async function loadSessionFromEnv(): Promise<{
   }
 }
 
+// Files that must be included for the bot to reconnect AND decrypt first messages.
+//   creds.json     → registration identity + signed pre-key → reconnection to WA
+//   pre-key-N.json → one-time pre-keys uploaded to WA servers → decrypt first
+//                    message from any new contact that fetches one of these keys
+//
+// Excluded deliberately to stay within Heroku's 64 KB config-var limit:
+//   session-*.json          → P2P Signal sessions; re-established automatically
+//                             via key-retry (getMessage returns undefined)
+//   sender-key-*.json       → Group sender keys; re-exchanged on bot reconnect
+//   app-state-sync-key-*.json / app-state-sync-version-*.json → not needed for
+//                             message decryption at all
+//
+// Estimated encoded size of creds + 30 pre-keys ≈ 4–8 KB — well under 64 KB.
+const ESSENTIAL_PREFIXES = ["creds.json", "pre-key-"];
+
 export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<string> {
-  // Include ALL auth state files — not just creds.json.
-  //
-  // creds.json  = registration identity, handles re-connection to WA servers.
-  // pre-key-*.json + session-*.json + sender-key-*.json = Signal protocol keys,
-  //   required to DECRYPT incoming messages. Without them every msg arrives as
-  //   msg.message = null ("Bad MAC" / undecryptable).
-  //
-  // With gzip compression a fresh session (creds + ~100 pre-keys) is ~5-15 KB,
-  // well within Heroku's 64 KB config-var limit.
-  const json       = Buffer.from(JSON.stringify(fileMap), "utf-8");
+  const essential: SessionFileMap = {};
+
+  for (const [filename, content] of Object.entries(fileMap)) {
+    if (ESSENTIAL_PREFIXES.some((p) => filename === p || filename.startsWith(p))) {
+      essential[filename] = content;
+    }
+  }
+
+  // Safety fallback: if filtering left us with nothing, encode everything
+  const toEncode = Object.keys(essential).length > 0 ? essential : fileMap;
+
+  const fileNames = Object.keys(toEncode);
+  logger.info(
+    { files: fileNames.length, names: fileNames.slice(0, 8) },
+    "Encoding session (creds + pre-keys only)"
+  );
+
+  const json       = Buffer.from(JSON.stringify(toEncode), "utf-8");
   const compressed = await gzip(json);
-  return SESSION_PREFIX + compressed.toString("base64");
+  const encoded    = SESSION_PREFIX + compressed.toString("base64");
+  logger.info({ byteLength: encoded.length }, "SESSION_ID size (characters)");
+  return encoded;
 }

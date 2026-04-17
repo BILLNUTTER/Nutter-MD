@@ -28467,11 +28467,25 @@ async function loadSessionFromEnv() {
   }
 }
 async function encodeSessionToBase64(fileMap) {
-  const json = Buffer.from(JSON.stringify(fileMap), "utf-8");
+  const essential = {};
+  for (const [filename, content] of Object.entries(fileMap)) {
+    if (ESSENTIAL_PREFIXES.some((p) => filename === p || filename.startsWith(p))) {
+      essential[filename] = content;
+    }
+  }
+  const toEncode = Object.keys(essential).length > 0 ? essential : fileMap;
+  const fileNames = Object.keys(toEncode);
+  logger.info(
+    { files: fileNames.length, names: fileNames.slice(0, 8) },
+    "Encoding session (creds + pre-keys only)"
+  );
+  const json = Buffer.from(JSON.stringify(toEncode), "utf-8");
   const compressed = await gzip(json);
-  return SESSION_PREFIX + compressed.toString("base64");
+  const encoded = SESSION_PREFIX + compressed.toString("base64");
+  logger.info({ byteLength: encoded.length }, "SESSION_ID size (characters)");
+  return encoded;
 }
-var gzip, gunzip, SESSION_PREFIX;
+var gzip, gunzip, SESSION_PREFIX, ESSENTIAL_PREFIXES;
 var init_session = __esm({
   "src/bot/session.ts"() {
     "use strict";
@@ -28479,6 +28493,7 @@ var init_session = __esm({
     gzip = promisify(zlib.gzip);
     gunzip = promisify(zlib.gunzip);
     SESSION_PREFIX = "NUTTERX-MD::;";
+    ESSENTIAL_PREFIXES = ["creds.json", "pre-key-"];
   }
 });
 
