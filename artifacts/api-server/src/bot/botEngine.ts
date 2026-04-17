@@ -146,12 +146,23 @@ async function connectBot(sessionAuth: {
 
   sock.ev.on("creds.update", sessionAuth.saveCreds);
 
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
     if (connection === "open") {
       failureCount = 0;
       logger.info("✅ NUTTER-XMD connected to WhatsApp");
+
+      // Upload fresh pre-keys so the WA server always has keys ready for new
+      // contacts. Without this, a contact whose pre-key was already consumed
+      // would get a decryption failure and a slow 30-60 s retry round-trip.
+      try {
+        await (sock as unknown as { uploadPreKeys: () => Promise<void> }).uploadPreKeys();
+        logger.info("✅ Pre-keys uploaded to WhatsApp server");
+      } catch (err) {
+        logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
+      }
+
       void onFirstConnect(sock);
       return;
     }
@@ -212,7 +223,13 @@ async function connectBot(sessionAuth: {
         const hasMessage = !!msg.message;
         const hasJid = !!msg.key?.remoteJid;
         if (!hasMessage || !hasJid) {
-          logger.info({ hasMessage, hasJid, fromMe: msg.key?.fromMe }, "↩ Skipped — no message or no remoteJid");
+          // stubType > 0 = protocol notification (join, leave, etc.) — not a decrypt failure
+          const stubType = msg.messageStubType ?? 0;
+          if (stubType === 0) {
+            logger.warn({ hasMessage, hasJid, fromMe: msg.key?.fromMe, stubType }, "⚠️ Decryption failure — message arrived but content is null. Baileys will auto-retry.");
+          } else {
+            logger.info({ stubType }, "↩ Skipped protocol notification (not a real message)");
+          }
           continue;
         }
 

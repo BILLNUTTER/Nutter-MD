@@ -69,27 +69,33 @@ export async function loadSessionFromEnv(): Promise<{
   }
 }
 
-// SESSION_ID encoding strategy — creds + pre-keys only:
+// SESSION_ID encoding strategy — creds + pre-keys + P2P sessions:
 //
-//   WHY pre-key-*.json files are REQUIRED:
-//     When a contact sends a message, WhatsApp's server gives them one of the
-//     bot's pre-keys to establish a Signal session.  Without the matching
-//     private key file on disk, decryption fails with "Key used already or
-//     never filled" — and Baileys treats that as a SILENT failure (just ACKs,
-//     NO retry sent).  Having the pre-key files on disk is the only fix.
+//   creds.json        — always required (identity / reconnection keys)
 //
-//   WHY not session-*.json / sender-key-*.json?
-//     Those files are large and re-established automatically:
-//       session-*     → P2P Signal sessions (automatic retry via getMessage)
-//       sender-key-*  → Group keys (re-exchanged on bot reconnect)
-//       app-state-sync-* → Not needed for message decryption at all
+//   pre-key-*.json    — REQUIRED for new contacts.
+//     WA server gives a contact one of our pre-keys when they first message us.
+//     Without the private key on disk, Baileys fails silently (ACKs the message,
+//     never retries). Keeping up to MAX_PREKEYS newest keys covers all active ones.
 //
-//   SIZE: fresh pair generates ~30 pre-keys × ~300 bytes = ~9 KB raw
-//         → ~2.5 KB gzip → ~3.5 KB base64 → well under Heroku's 64 KB limit.
+//   session-*.json    — REQUIRED for fast responses from existing contacts.
+//     These are the P2P Signal ratchet states (~1-2 KB each). Without them,
+//     every contact's FIRST message after each redeploy fails to decrypt and
+//     triggers a 30-60 s retry round-trip before the bot can reply.
+//     We include all session files up to SESSION_RAW_BUDGET bytes (raw JSON),
+//     which comfortably covers 100+ active contacts well within Heroku's limits.
 //
-//   Safety cap MAX_PREKEYS: keep only the highest-ID (most recent) keys.
-//   WA server holds at most 30 pre-keys per device at a time.
+//   NOT included: sender-key-* (group keys, re-exchanged on reconnect)
+//                 app-state-sync-* (not needed for message decryption)
+//
+//   SIZE: creds (~1 KB) + 30 pre-keys (~9 KB) + 50 sessions (~75 KB) raw
+//         → ~15-20 KB gzip → well under Heroku's 64 KB config var limit.
 const MAX_PREKEYS = 50;
+
+// Budget for session-*.json files (raw JSON bytes).
+// session-*.json hold P2P Signal sessions (~1-2 KB each).
+// 150 KB raw → ~30 KB gzip → still well under Heroku's 32 KB per-var limit.
+const SESSION_RAW_BUDGET = 150_000;
 
 export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<string> {
   const toEncode: SessionFileMap = {};
@@ -101,7 +107,8 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
     logger.warn("creds.json not found in fileMap — SESSION_ID may be invalid");
   }
 
-  // Collect pre-key files, sort ascending by numeric ID, take last MAX_PREKEYS
+  // ── Pre-key files: needed so new contacts can establish Signal sessions ───────
+  // Sort ascending by numeric ID, take last MAX_PREKEYS (highest = most recent)
   const preKeyFiles = Object.keys(fileMap)
     .filter((f) => f.startsWith("pre-key-") && f.endsWith(".json"))
     .sort((a, b) => {
@@ -115,9 +122,27 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
     toEncode[f] = fileMap[f];
   }
 
+  // ── Session files: preserve Signal sessions with existing contacts ────────────
+  // Without these, every contact needs a retry round-trip (30-60 s delay) after
+  // redeployment because the bot cannot decrypt their first message.
+  // With them, the bot decrypts immediately using the saved Signal chain state.
+  let sessionRawBytes = 0;
+  const sessionFiles = Object.keys(fileMap)
+    .filter((f) => f.startsWith("session-") && f.endsWith(".json"))
+    .sort(); // consistent order; all are equally "recent" from WA's perspective
+
+  for (const f of sessionFiles) {
+    const size = JSON.stringify(fileMap[f]).length;
+    if (sessionRawBytes + size > SESSION_RAW_BUDGET) break;
+    toEncode[f] = fileMap[f];
+    sessionRawBytes += size;
+  }
+
+  const sessionCount = Object.keys(toEncode).filter((f) => f.startsWith("session-")).length;
+
   logger.info(
-    { totalFiles: Object.keys(toEncode).length, preKeys: preKeyFiles.length },
-    "Encoding session (creds + pre-keys)"
+    { totalFiles: Object.keys(toEncode).length, preKeys: preKeyFiles.length, sessions: sessionCount },
+    "Encoding session (creds + pre-keys + sessions)"
   );
 
   const json       = Buffer.from(JSON.stringify(toEncode), "utf-8");

@@ -301,8 +301,8 @@ var require_req = __commonJS({
       if (req.originalUrl) {
         _req.url = req.originalUrl;
       } else {
-        const path2 = req.path;
-        _req.url = typeof path2 === "string" ? path2 : req.url ? req.url.path || req.url : void 0;
+        const path3 = req.path;
+        _req.url = typeof path3 === "string" ? path3 : req.url ? req.url.path || req.url : void 0;
       }
       if (req.query) {
         _req.query = req.query;
@@ -467,14 +467,14 @@ var require_redact = __commonJS({
       }
       return obj;
     }
-    function parsePath(path2) {
+    function parsePath(path3) {
       const parts = [];
       let current = "";
       let inBrackets = false;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path2.length; i++) {
-        const char = path2[i];
+      for (let i = 0; i < path3.length; i++) {
+        const char = path3[i];
         if (!inBrackets && char === ".") {
           if (current) {
             parts.push(current);
@@ -605,10 +605,10 @@ var require_redact = __commonJS({
       return current;
     }
     function redactPaths(obj, paths, censor, remove = false) {
-      for (const path2 of paths) {
-        const parts = parsePath(path2);
+      for (const path3 of paths) {
+        const parts = parsePath(path3);
         if (parts.includes("*")) {
-          redactWildcardPath(obj, parts, censor, path2, remove);
+          redactWildcardPath(obj, parts, censor, path3, remove);
         } else {
           if (remove) {
             removeKey(obj, parts);
@@ -693,8 +693,8 @@ var require_redact = __commonJS({
           }
         } else {
           if (afterWildcard.includes("*")) {
-            const wrappedCensor = typeof censor === "function" ? (value, path2) => {
-              const fullPath = [...pathArray.slice(0, pathLength), ...path2];
+            const wrappedCensor = typeof censor === "function" ? (value, path3) => {
+              const fullPath = [...pathArray.slice(0, pathLength), ...path3];
               return censor(value, fullPath);
             } : censor;
             redactWildcardPath(current, afterWildcard, wrappedCensor, originalPath, remove);
@@ -729,8 +729,8 @@ var require_redact = __commonJS({
         return null;
       }
       const pathStructure = /* @__PURE__ */ new Map();
-      for (const path2 of pathsToClone) {
-        const parts = parsePath(path2);
+      for (const path3 of pathsToClone) {
+        const parts = parsePath(path3);
         let current = pathStructure;
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
@@ -782,24 +782,24 @@ var require_redact = __commonJS({
       }
       return cloneSelectively(obj, pathStructure);
     }
-    function validatePath(path2) {
-      if (typeof path2 !== "string") {
+    function validatePath(path3) {
+      if (typeof path3 !== "string") {
         throw new Error("Paths must be (non-empty) strings");
       }
-      if (path2 === "") {
+      if (path3 === "") {
         throw new Error("Invalid redaction path ()");
       }
-      if (path2.includes("..")) {
-        throw new Error(`Invalid redaction path (${path2})`);
+      if (path3.includes("..")) {
+        throw new Error(`Invalid redaction path (${path3})`);
       }
-      if (path2.includes(",")) {
-        throw new Error(`Invalid redaction path (${path2})`);
+      if (path3.includes(",")) {
+        throw new Error(`Invalid redaction path (${path3})`);
       }
       let bracketCount = 0;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path2.length; i++) {
-        const char = path2[i];
+      for (let i = 0; i < path3.length; i++) {
+        const char = path3[i];
         if ((char === '"' || char === "'") && bracketCount > 0) {
           if (!inQuotes) {
             inQuotes = true;
@@ -813,20 +813,20 @@ var require_redact = __commonJS({
         } else if (char === "]" && !inQuotes) {
           bracketCount--;
           if (bracketCount < 0) {
-            throw new Error(`Invalid redaction path (${path2})`);
+            throw new Error(`Invalid redaction path (${path3})`);
           }
         }
       }
       if (bracketCount !== 0) {
-        throw new Error(`Invalid redaction path (${path2})`);
+        throw new Error(`Invalid redaction path (${path3})`);
       }
     }
     function validatePaths(paths) {
       if (!Array.isArray(paths)) {
         throw new TypeError("paths must be an array");
       }
-      for (const path2 of paths) {
-        validatePath(path2);
+      for (const path3 of paths) {
+        validatePath(path3);
       }
     }
     function slowRedact(options = {}) {
@@ -994,8 +994,8 @@ var require_redaction = __commonJS({
         if (shape[k] === null) {
           o[k] = (value) => topCensor(value, [k]);
         } else {
-          const wrappedCensor = typeof censor === "function" ? (value, path2) => {
-            return censor(value, [k, ...path2]);
+          const wrappedCensor = typeof censor === "function" ? (value, path3) => {
+            return censor(value, [k, ...path3]);
           } : censor;
           o[k] = Redact({
             paths: shape[k],
@@ -1213,10 +1213,10 @@ var require_atomic_sleep = __commonJS({
 var require_sonic_boom = __commonJS({
   "../../node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports, module) {
     "use strict";
-    var fs2 = __require("fs");
+    var fs3 = __require("fs");
     var EventEmitter = __require("events");
     var inherits = __require("util").inherits;
-    var path2 = __require("path");
+    var path3 = __require("path");
     var sleep = require_atomic_sleep();
     var assert = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
@@ -1270,20 +1270,20 @@ var require_sonic_boom = __commonJS({
       const mode = sonic.mode;
       if (sonic.sync) {
         try {
-          if (sonic.mkdir) fs2.mkdirSync(path2.dirname(file), { recursive: true });
-          const fd = fs2.openSync(file, flags, mode);
+          if (sonic.mkdir) fs3.mkdirSync(path3.dirname(file), { recursive: true });
+          const fd = fs3.openSync(file, flags, mode);
           fileOpened(null, fd);
         } catch (err) {
           fileOpened(err);
           throw err;
         }
       } else if (sonic.mkdir) {
-        fs2.mkdir(path2.dirname(file), { recursive: true }, (err) => {
+        fs3.mkdir(path3.dirname(file), { recursive: true }, (err) => {
           if (err) return fileOpened(err);
-          fs2.open(file, flags, mode, fileOpened);
+          fs3.open(file, flags, mode, fileOpened);
         });
       } else {
-        fs2.open(file, flags, mode, fileOpened);
+        fs3.open(file, flags, mode, fileOpened);
       }
     }
     function SonicBoom(opts) {
@@ -1324,8 +1324,8 @@ var require_sonic_boom = __commonJS({
         this.flush = flushBuffer;
         this.flushSync = flushBufferSync;
         this._actualWrite = actualWriteBuffer;
-        fsWriteSync = () => fs2.writeSync(this.fd, this._writingBuf);
-        fsWrite = () => fs2.write(this.fd, this._writingBuf, this.release);
+        fsWriteSync = () => fs3.writeSync(this.fd, this._writingBuf);
+        fsWrite = () => fs3.write(this.fd, this._writingBuf, this.release);
       } else if (contentMode === void 0 || contentMode === kContentModeUtf8) {
         this._writingBuf = "";
         this.write = write;
@@ -1334,15 +1334,15 @@ var require_sonic_boom = __commonJS({
         this._actualWrite = actualWrite;
         fsWriteSync = () => {
           if (Buffer.isBuffer(this._writingBuf)) {
-            return fs2.writeSync(this.fd, this._writingBuf);
+            return fs3.writeSync(this.fd, this._writingBuf);
           }
-          return fs2.writeSync(this.fd, this._writingBuf, "utf8");
+          return fs3.writeSync(this.fd, this._writingBuf, "utf8");
         };
         fsWrite = () => {
           if (Buffer.isBuffer(this._writingBuf)) {
-            return fs2.write(this.fd, this._writingBuf, this.release);
+            return fs3.write(this.fd, this._writingBuf, this.release);
           }
-          return fs2.write(this.fd, this._writingBuf, "utf8", this.release);
+          return fs3.write(this.fd, this._writingBuf, "utf8", this.release);
         };
       } else {
         throw new Error(`SonicBoom supports "${kContentModeUtf8}" and "${kContentModeBuffer}", but passed ${contentMode}`);
@@ -1399,7 +1399,7 @@ var require_sonic_boom = __commonJS({
           }
         }
         if (this._fsync) {
-          fs2.fsyncSync(this.fd);
+          fs3.fsyncSync(this.fd);
         }
         const len = this._len;
         if (this._reopening) {
@@ -1513,7 +1513,7 @@ var require_sonic_boom = __commonJS({
       const onDrain = () => {
         if (!this._fsync) {
           try {
-            fs2.fsync(this.fd, (err) => {
+            fs3.fsync(this.fd, (err) => {
               this._flushPending = false;
               cb(err);
             });
@@ -1615,7 +1615,7 @@ var require_sonic_boom = __commonJS({
       const fd = this.fd;
       this.once("ready", () => {
         if (fd !== this.fd) {
-          fs2.close(fd, (err) => {
+          fs3.close(fd, (err) => {
             if (err) {
               return this.emit("error", err);
             }
@@ -1664,7 +1664,7 @@ var require_sonic_boom = __commonJS({
           buf = this._bufs[0];
         }
         try {
-          const n = Buffer.isBuffer(buf) ? fs2.writeSync(this.fd, buf) : fs2.writeSync(this.fd, buf, "utf8");
+          const n = Buffer.isBuffer(buf) ? fs3.writeSync(this.fd, buf) : fs3.writeSync(this.fd, buf, "utf8");
           const releasedBufObj = releaseWritingBuf(buf, this._len, n);
           buf = releasedBufObj.writingBuf;
           this._len = releasedBufObj.len;
@@ -1680,7 +1680,7 @@ var require_sonic_boom = __commonJS({
         }
       }
       try {
-        fs2.fsyncSync(this.fd);
+        fs3.fsyncSync(this.fd);
       } catch {
       }
     }
@@ -1701,7 +1701,7 @@ var require_sonic_boom = __commonJS({
           buf = mergeBuf(this._bufs[0], this._lens[0]);
         }
         try {
-          const n = fs2.writeSync(this.fd, buf);
+          const n = fs3.writeSync(this.fd, buf);
           buf = buf.subarray(n);
           this._len = Math.max(this._len - n, 0);
           if (buf.length <= 0) {
@@ -1729,13 +1729,13 @@ var require_sonic_boom = __commonJS({
       this._writingBuf = this._writingBuf.length ? this._writingBuf : this._bufs.shift() || "";
       if (this.sync) {
         try {
-          const written = Buffer.isBuffer(this._writingBuf) ? fs2.writeSync(this.fd, this._writingBuf) : fs2.writeSync(this.fd, this._writingBuf, "utf8");
+          const written = Buffer.isBuffer(this._writingBuf) ? fs3.writeSync(this.fd, this._writingBuf) : fs3.writeSync(this.fd, this._writingBuf, "utf8");
           release(null, written);
         } catch (err) {
           release(err);
         }
       } else {
-        fs2.write(this.fd, this._writingBuf, release);
+        fs3.write(this.fd, this._writingBuf, release);
       }
     }
     function actualWriteBuffer() {
@@ -1744,7 +1744,7 @@ var require_sonic_boom = __commonJS({
       this._writingBuf = this._writingBuf.length ? this._writingBuf : mergeBuf(this._bufs.shift(), this._lens.shift());
       if (this.sync) {
         try {
-          const written = fs2.writeSync(this.fd, this._writingBuf);
+          const written = fs3.writeSync(this.fd, this._writingBuf);
           release(null, written);
         } catch (err) {
           release(err);
@@ -1753,7 +1753,7 @@ var require_sonic_boom = __commonJS({
         if (kCopyBuffer) {
           this._writingBuf = Buffer.from(this._writingBuf);
         }
-        fs2.write(this.fd, this._writingBuf, release);
+        fs3.write(this.fd, this._writingBuf, release);
       }
     }
     function actualClose(sonic) {
@@ -1769,12 +1769,12 @@ var require_sonic_boom = __commonJS({
       sonic._lens = [];
       assert(typeof sonic.fd === "number", `sonic.fd must be a number, got ${typeof sonic.fd}`);
       try {
-        fs2.fsync(sonic.fd, closeWrapped);
+        fs3.fsync(sonic.fd, closeWrapped);
       } catch {
       }
       function closeWrapped() {
         if (sonic.fd !== 1 && sonic.fd !== 2) {
-          fs2.close(sonic.fd, done);
+          fs3.close(sonic.fd, done);
         } else {
           done();
         }
@@ -4138,9 +4138,9 @@ var require_pino = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports, module) {
     function pinoBundlerAbsolutePath(p) {
       try {
-        const path2 = __require("path");
+        const path3 = __require("path");
         const outputDir = "/home/runner/workspace/artifacts/api-server/dist";
-        return path2.resolve(outputDir, p.replace(/^\.\//, ""));
+        return path3.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
         const f = new Function("p", "return new URL(p, import.meta.url).pathname");
         return f(p);
@@ -5152,6 +5152,90 @@ function popCachedMessage(id) {
 }
 
 // src/bot/commands/general.ts
+import fs2 from "fs";
+import path2 from "path";
+function getMenuImageBuffer() {
+  try {
+    const assetPath = path2.join(__dirname, "assets", "menu.jpg");
+    return fs2.readFileSync(assetPath);
+  } catch {
+    return null;
+  }
+}
+var MENU_CATEGORIES = [
+  {
+    icon: "\u{1F916}",
+    name: "AI",
+    commands: ["gpt", "gemini", "deepseek", "blackbox", "code", "analyze", "summarize", "translate", "recipe", "story", "teach", "generate"]
+  },
+  {
+    icon: "\u{1F4BE}",
+    name: "DOWNLOADS",
+    commands: ["youtube", "song", "tiktok", "instagram", "twitter", "facebook", "gdrive", "mediafire", "image"]
+  },
+  {
+    icon: "\u{1F3B5}",
+    name: "AUDIO",
+    commands: ["tomp3", "toptt", "bass", "earrape", "reverse", "robot", "deep"]
+  },
+  {
+    icon: "\u{1F60A}",
+    name: "FUN",
+    commands: ["meme", "joke", "quote", "trivia", "8ball", "ship", "love", "hug"]
+  },
+  {
+    icon: "\u{1F6E1}\uFE0F",
+    name: "GROUP",
+    commands: ["kick", "add", "promote", "demote", "mute", "unmute", "antilink", "tagall", "groupinfo"]
+  },
+  {
+    icon: "\u2699\uFE0F",
+    name: "TOOLS",
+    commands: ["sticker", "ping", "alive", "menu", "owner", "settings", "restart", "setprefix"]
+  },
+  {
+    icon: "\u{1F512}",
+    name: "SECURITY",
+    commands: ["antibadword", "antimention", "antidelete", "ban", "unban"]
+  },
+  {
+    icon: "\u{1F4CA}",
+    name: "STATUS",
+    commands: ["autoviewstatus", "autolikestatus", "statusemoji"]
+  },
+  {
+    icon: "\u{1F389}",
+    name: "EVENTS",
+    commands: ["welcome", "setwelcome", "autoreply"]
+  }
+];
+var TOTAL_COMMANDS = MENU_CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
+function buildMenuText(prefix, pushName) {
+  const now = /* @__PURE__ */ new Date();
+  const dateStr = now.toLocaleString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  const header = `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 [ NUTTER-XMD ] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+\u2733 | TOTAL COMMANDS: ${TOTAL_COMMANDS}
+\u2733 | PREFIX: ${prefix}
+\u2733 | USER: ${pushName}
+\u2733 | DATE: ${dateStr}`;
+  const categories = MENU_CATEGORIES.map(({ icon, name, commands }) => {
+    const rows = commands.map((cmd) => `\u2502\u21AA\u2192. ${prefix}${cmd}`).join("\n");
+    return `
+
+\u2500\u2500\u2500\u2500 \u300C ${icon} ${name} \u300D \u2500\u2500\u2500\u2500\u2192
+${rows}
+\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2192`;
+  }).join("");
+  return header + categories;
+}
 async function handlePing(sock, msg, ctx) {
   const start = Date.now();
   await sock.sendMessage(ctx.jid, { text: "\u{1F3D3} Pong!" });
@@ -5167,58 +5251,31 @@ async function handleAlive(sock, _msg, ctx) {
 
 *Status:* Online
 *Uptime:* ${hours}h ${minutes}m ${seconds}s
-*Version:* 1.0.0`;
+*Version:* 9.1.3`;
   await sock.sendMessage(ctx.jid, { text });
 }
-async function handleMenu(sock, _msg, ctx, prefix) {
-  const botName = process.env["BOT_NAME"] || "NUTTER-XMD";
-  const menu = `*${botName}* \u2014 Command Menu
+async function handleMenu(sock, msg, ctx, prefix) {
+  const senderJid = msg.key.participant || (msg.key.fromMe ? sock.user?.id || "" : msg.key.remoteJid || "");
+  const pushName = msg.pushName || senderJid.split("@")[0].split(":")[0];
+  const imgBuf = getMenuImageBuffer();
+  if (imgBuf) {
+    try {
+      await sock.sendMessage(ctx.jid, {
+        image: imgBuf,
+        caption: "",
+        mimetype: "image/jpeg"
+      });
+    } catch (err) {
+      logger.warn({ err }, "Could not send menu image");
+    }
+  }
+  const menuText = `Hey @${senderJid.split("@")[0]} \u{1F916}
 
-*General*
-${prefix}ping \u2014 Check bot latency
-${prefix}alive \u2014 Bot uptime & status
-${prefix}menu \u2014 Show this menu
-${prefix}owner \u2014 Get owner contact
-${prefix}settings \u2014 Current bot settings
-${prefix}sticker \u2014 Convert image to sticker (reply to image)
-${prefix}restart \u2014 Restart bot (owner only)
-
-*Status (Owner only)*
-${prefix}autoviewstatus on/off \u2014 Auto-view contacts' statuses
-${prefix}autolikestatus on/off \u2014 Auto-react to statuses
-${prefix}statusemoji <emoji> \u2014 Set reaction emoji (e.g. \u2764\uFE0F,\u{1F525},\u{1F60D})
-
-*Group Info*
-${prefix}groupinfo \u2014 Show group details & stats
-${prefix}tagall [msg] \u2014 Tag all members (admin only)
-
-*Group Management* (Admin only)
-${prefix}kick @user \u2014 Remove member
-${prefix}add +number \u2014 Add member
-${prefix}promote @user \u2014 Make admin
-${prefix}demote @user \u2014 Remove admin
-${prefix}mute \u2014 Mute group (admins only can chat)
-${prefix}unmute \u2014 Unmute group
-${prefix}antilink on/off \u2014 Block links
-${prefix}antibadword delete/kick/off \u2014 Block bad words
-${prefix}setbadwords <w1,w2> \u2014 Set custom bad words list
-${prefix}setbadwords list \u2014 Show current bad words
-${prefix}setbadwords reset \u2014 Restore default list
-${prefix}antimention on/off \u2014 Block mass mentions
-${prefix}antidelete on/off \u2014 Forward deleted msgs to owner DM
-${prefix}ban @user \u2014 Ban user from bot
-${prefix}unban @user \u2014 Unban user
-${prefix}setprefix <char> \u2014 Change command prefix
-
-*Welcome Messages* (Admin only)
-${prefix}welcome on/off \u2014 Enable/disable welcome messages
-${prefix}setwelcome <msg> \u2014 Set welcome text (use {name} & {group})
-
-*Auto-Reply* (Admin only)
-${prefix}autoreply add <trigger> | <response>
-${prefix}autoreply remove <trigger>
-${prefix}autoreply list`;
-  await sock.sendMessage(ctx.jid, { text: menu });
+` + buildMenuText(prefix, pushName);
+  await sock.sendMessage(ctx.jid, {
+    text: menuText,
+    mentions: [senderJid]
+  });
 }
 async function handleOwner(sock, _msg, ctx) {
   const ownerNumber = process.env["OWNER_NUMBER"] || "";
@@ -5286,13 +5343,13 @@ async function downloadToBuffer(mediaMsg, type) {
 }
 async function extractVideoFirstFrame(videoBuffer) {
   const os2 = await import("os");
-  const path2 = await import("path");
-  const fs2 = await import("fs");
+  const pathMod = await import("path");
+  const fsMod = await import("fs");
   const { spawn } = await import("child_process");
   const tmpDir = os2.default.tmpdir();
-  const inputPath = path2.default.join(tmpDir, `nutter_vid_${Date.now()}.mp4`);
-  const outputPath = path2.default.join(tmpDir, `nutter_frame_${Date.now()}.png`);
-  fs2.default.writeFileSync(inputPath, videoBuffer);
+  const inputPath = pathMod.default.join(tmpDir, `nutter_vid_${Date.now()}.mp4`);
+  const outputPath = pathMod.default.join(tmpDir, `nutter_frame_${Date.now()}.png`);
+  fsMod.default.writeFileSync(inputPath, videoBuffer);
   await new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", [
       "-y",
@@ -5315,9 +5372,9 @@ async function extractVideoFirstFrame(videoBuffer) {
       else reject(err);
     });
   });
-  const frameBuffer = fs2.default.readFileSync(outputPath);
-  fs2.default.rmSync(inputPath, { force: true });
-  fs2.default.rmSync(outputPath, { force: true });
+  const frameBuffer = fsMod.default.readFileSync(outputPath);
+  fsMod.default.rmSync(inputPath, { force: true });
+  fsMod.default.rmSync(outputPath, { force: true });
   return frameBuffer;
 }
 async function handleSticker(sock, msg, ctx) {
@@ -5856,8 +5913,8 @@ async function handleStatusMessage(sock, msg) {
       }
       const emojiList = (settings.statusLikeEmoji || "\u2764\uFE0F").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "\u2764\uFE0F";
-      await sock.sendMessage(msg.key.participant, {
-        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } }
+      await sock.sendMessage("status@broadcast", {
+        react: { text: emoji, key: msg.key }
       });
     } catch {
     }
@@ -6222,11 +6279,17 @@ async function connectBot(sessionAuth) {
     }
   });
   sock.ev.on("creds.update", sessionAuth.saveCreds);
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === "open") {
       failureCount = 0;
       logger.info("\u2705 NUTTER-XMD connected to WhatsApp");
+      try {
+        await sock.uploadPreKeys();
+        logger.info("\u2705 Pre-keys uploaded to WhatsApp server");
+      } catch (err) {
+        logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
+      }
       void onFirstConnect(sock);
       return;
     }
@@ -6270,7 +6333,12 @@ async function connectBot(sessionAuth) {
         const hasMessage = !!msg.message;
         const hasJid = !!msg.key?.remoteJid;
         if (!hasMessage || !hasJid) {
-          logger.info({ hasMessage, hasJid, fromMe: msg.key?.fromMe }, "\u21A9 Skipped \u2014 no message or no remoteJid");
+          const stubType = msg.messageStubType ?? 0;
+          if (stubType === 0) {
+            logger.warn({ hasMessage, hasJid, fromMe: msg.key?.fromMe, stubType }, "\u26A0\uFE0F Decryption failure \u2014 message arrived but content is null. Baileys will auto-retry.");
+          } else {
+            logger.info({ stubType }, "\u21A9 Skipped protocol notification (not a real message)");
+          }
           continue;
         }
         const jid = msg.key.remoteJid;
