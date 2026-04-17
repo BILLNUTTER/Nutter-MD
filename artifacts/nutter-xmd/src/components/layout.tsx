@@ -19,7 +19,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground dark selection:bg-primary/30 selection:text-primary">
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <div className="flex items-center gap-2 font-mono text-lg font-bold tracking-tight text-primary">
             <span className="text-2xl leading-none select-none">🇰🇪</span>
             <span>NUTTER-XMD</span>
@@ -42,7 +42,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 container py-8 relative flex flex-col">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative flex flex-col">
         <div className="pointer-events-none fixed inset-0 flex justify-center">
           <div className="h-[500px] w-[500px] rounded-full bg-primary/5 blur-[120px] -translate-y-1/2" />
         </div>
@@ -52,7 +52,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       <footer className="border-t border-border/50 py-4">
-        <div className="container flex items-center justify-center">
+        <div className="w-full max-w-7xl mx-auto px-4 flex items-center justify-center">
           <p className="text-xs text-muted-foreground">
             🇰🇪 NUTTER-XMD — Kenya's premier WhatsApp multi-device bot
           </p>

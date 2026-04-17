@@ -134,10 +134,13 @@ async function connectBot(sessionAuth: {
     msgRetryCounterCache,
     logger: silentLogger,
     syncFullHistory: false,
-    // getMessage lets Baileys re-fetch a message when decryption fails (Bad MAC fix)
+    // getMessage is called by Baileys when decryption fails (Bad MAC / missing session key).
+    // Returning undefined signals Baileys to send a key-retry request to the sender so
+    // they re-send the message with a fresh Signal session — never return a fake empty
+    // message here as that suppresses the retry and the message is lost silently.
     getMessage: async (key) => {
       const cached = key.id ? popCachedMessage(key.id) : undefined;
-      return cached?.message ?? { conversation: "" };
+      return cached?.message ?? undefined;
     },
   });
 
