@@ -181,6 +181,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     return;
   }
 
+  // ── Extract body FIRST so we can bail early before any expensive API calls ──
   const body =
     msg.message?.conversation ||
     msg.message?.extendedTextMessage?.text ||
@@ -192,6 +193,15 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     msg.message?.templateButtonReplyMessage?.selectedId ||
     "";
 
+  // Non-text messages (senderKeyDistribution, reactions, stickers …) can never
+  // trigger a command or antilink/antibadword — skip group metadata lookup entirely.
+  if (!body) {
+    printMessageActivity({ msgType, pushName: msg.pushName || "", senderNumber, isGroup });
+    logger.info({ jid, msgType }, "No text body — skipped command processing");
+    return;
+  }
+
+  // ── Text body is present — now fetch group context (with timeout guard) ────────
   let groupSettings: GroupSettings | null = null;
   let isSenderGroupAdmin = false;
   let isBotGroupAdmin = false;
@@ -204,7 +214,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       groupSettings = getGroupSettings(jid);
       if (groupSettings?.customPrefix) prefix = groupSettings.customPrefix;
 
-      // Use cached group metadata — avoids an API call on every message
+      // Cached group metadata (5-second timeout guard in getCachedGroupMeta)
       const groupMeta = await getCachedGroupMeta(sock, jid);
       groupName = groupMeta.subject;
       groupNumber = jid.split("@")[0];
@@ -218,7 +228,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       }
 
       const msgKey = msg.key as WAMessageKey;
-      if (groupSettings && body) {
+      if (groupSettings) {
         if (groupSettings.antilink && !isOwner && !isSenderGroupAdmin && URL_REGEX.test(body)) {
           await sock.sendMessage(jid, { delete: msgKey });
           await sock.sendMessage(jid, { text: "Links are not allowed in this group." });
@@ -251,7 +261,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     }
   }
 
-  // Always log the activity (even non-command messages) so we can see traffic in logs
+  // Log activity now that we have group name (if available)
   printMessageActivity({
     msgType,
     pushName: msg.pushName || "",
@@ -260,11 +270,6 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     groupName,
     groupNumber,
   });
-
-  if (!body) {
-    logger.info({ jid, msgType }, "No text body — skipped command processing");
-    return;
-  }
 
   logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "📝 Body extracted");
 

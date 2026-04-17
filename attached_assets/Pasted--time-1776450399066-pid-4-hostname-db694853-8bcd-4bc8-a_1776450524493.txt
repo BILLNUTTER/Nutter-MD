@@ -1,0 +1,27 @@
+"time":1776450399066,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"✅ NUTTER-XMD connected to WhatsApp"}
+2026-04-17T18:26:39.074259+00:00 app[web.1]: {"level":30,"time":1776450399066,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"✅ Pre-keys uploaded to WhatsApp server"}
+2026-04-17T18:26:39.213803+00:00 app[web.1]: {"level":30,"time":1776450399213,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"✅ Sent welcome message to owner"}
+2026-04-17T18:26:39.213948+00:00 app[web.1]: {"level":30,"time":1776450399213,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"⏳ Waiting 8s for session to settle before auto-join/follow..."}
+2026-04-17T18:26:47.395102+00:00 app[web.1]: {"level":30,"time":1776450407394,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","subject":"🔴𝐁𝐎𝐓 𝐃𝐄𝐏𝐋𝐎𝐘𝐌𝐄𝐍𝐓🔴","jid":"120363418974198865@g.us","msg":"[autojoin] Group invite valid"}
+2026-04-17T18:26:47.714574+00:00 app[web.1]: {"level":30,"time":1776450407714,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"[autojoin] Already a member of support group"}
+2026-04-17T18:26:47.941791+00:00 app[web.1]: {"level":30,"time":1776450407941,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"[autofollow] Resolved channel JID: 120363424656965542@newsletter"}
+2026-04-17T18:26:48.089970+00:00 app[web.1]: {"level":30,"time":1776450408089,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","msg":"[autofollow] Skipped (already following or unavailable): Failed to newsletter follow, unexpected response structure."}
+2026-04-17T18:27:16.276123+00:00 app[api]: Log session created by user calviomayi@gmail.com
+2026-04-17T18:27:32.626114+00:00 app[api]: Log session created by user calviomayi@gmail.com
+2026-04-17T18:27:39.310991+00:00 app[web.1]: {"level":30,"time":1776450459310,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","type":"append","count":2,"msg":"📨 messages.upsert fired"}
+2026-04-17T18:27:39.312515+00:00 app[web.1]: 	 ✦ ✦ ✦ { N U T T E R - X M D } ✦ ✦ ✦
+2026-04-17T18:27:39.312665+00:00 app[web.1]: ╔════════════════════════════╗
+2026-04-17T18:27:39.312669+00:00 app[web.1]: ║ ✉   N E W   M E S S A G E   ✉ ║
+2026-04-17T18:27:39.312692+00:00 app[web.1]: ╚════════════════════════════╝
+2026-04-17T18:27:39.312695+00:00 app[web.1]: 💬 Direct Message
+2026-04-17T18:27:39.312711+00:00 app[web.1]: 👤 Sender: [254734265579]
+2026-04-17T18:27:39.312724+00:00 app[web.1]: 🆔 JID: 254734265579
+2026-04-17T18:27:39.312737+00:00 app[web.1]: 📋 Message Type: extendedTextMessage
+2026-04-17T18:27:39.312808+00:00 app[web.1]: 
+2026-04-17T18:27:39.313356+00:00 app[web.1]: {"level":30,"time":1776450459311,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","stubType":2,"jid":"status@broadcast","msg":"↩ Protocol notification — skipped"}
+2026-04-17T18:27:39.313359+00:00 app[web.1]: {"level":30,"time":1776450459311,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","jid":"254734265579@s.whatsapp.net","msg":"👤 Self-chat command from owner's device — processing"}
+2026-04-17T18:27:39.313361+00:00 app[web.1]: {"level":30,"time":1776450459311,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","jid":"254734265579@s.whatsapp.net","jidType":"s.whatsapp.net","fromMe":true,"msg":"➡️ Passing to message handler"}
+2026-04-17T18:27:39.313361+00:00 app[web.1]: {"level":30,"time":1776450459311,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","jid":"254734265579@s.whatsapp.net","fromMe":true,"msgKeys":["extendedTextMessage"],"msg":"📩 handleMessage reached"}
+2026-04-17T18:27:39.313362+00:00 app[web.1]: {"level":30,"time":1776450459312,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","jid":"254734265579@s.whatsapp.net","prefix":".","hasPrefix":false,"bodyPreview":"✅ 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱  ╍>〚𝗡𝗨𝗧𝗧𝗘𝗥𝗫-","msg":"📝 Body extracted"}
+2026-04-17T18:27:39.324461+00:00 app[web.1]: {"level":30,"time":1776450459324,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","type":"notify","count":1,"msg":"📨 messages.upsert fired"}
+2026-04-17T18:27:39.333290+00:00 app[web.1]: {"level":30,"time":1776450459324,"pid":4,"hostname":"db694853-8bcd-4bc8-ab0f-6d2fc9f6b7c1","jid":"55427089834127@lid","msg":"↩ fromMe echo — skipped (bot's own outgoing message)"}

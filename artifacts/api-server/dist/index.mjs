@@ -33170,9 +33170,10 @@ ${rows}
 }
 async function handlePing(sock, msg, ctx) {
   const start = Date.now();
-  await sock.sendMessage(ctx.jid, { text: "\u{1F3D3} Pong!" });
+  await sock.sendMessage(ctx.jid, { text: "\u{1F3D3} Measuring..." }, { quoted: msg });
   const latency = Date.now() - start;
-  await sock.sendMessage(ctx.jid, { text: `*Latency:* ${latency}ms` });
+  await sock.sendMessage(ctx.jid, { text: `\u{1F3D3} *Pong!*
+*Latency:* ${latency}ms` }, { quoted: msg });
 }
 async function handleAlive(sock, _msg, ctx) {
   const uptime = process.uptime();
@@ -33189,25 +33190,29 @@ async function handleAlive(sock, _msg, ctx) {
 async function handleMenu(sock, msg, ctx, prefix) {
   const senderJid = msg.key.participant || (msg.key.fromMe ? sock.user?.id || "" : msg.key.remoteJid || "");
   const pushName = msg.pushName || senderJid.split("@")[0].split(":")[0];
-  const imgBuf = getMenuImageBuffer();
-  if (imgBuf) {
-    try {
-      await sock.sendMessage(ctx.jid, {
-        image: imgBuf,
-        caption: "",
-        mimetype: "image/jpeg"
-      });
-    } catch (err) {
-      logger.warn({ err }, "Could not send menu image");
-    }
-  }
   const menuText = `Hey @${senderJid.split("@")[0]} \u{1F916}
 
 ` + buildMenuText(prefix, pushName);
-  await sock.sendMessage(ctx.jid, {
-    text: menuText,
-    mentions: [senderJid]
-  });
+  const imgBuf = getMenuImageBuffer();
+  if (imgBuf) {
+    await sock.sendMessage(
+      ctx.jid,
+      {
+        image: imgBuf,
+        caption: menuText,
+        mimetype: "image/jpeg",
+        mentions: [senderJid]
+      },
+      { quoted: msg }
+    );
+  } else {
+    logger.warn("Menu image not found \u2014 sending text only");
+    await sock.sendMessage(
+      ctx.jid,
+      { text: menuText, mentions: [senderJid] },
+      { quoted: msg }
+    );
+  }
 }
 async function handleOwner(sock, _msg, ctx) {
   const ownerNumber = process.env["OWNER_NUMBER"] || "";
@@ -33941,6 +33946,11 @@ async function handleMessage(sock, msg) {
     return;
   }
   const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || msg.message?.documentMessage?.caption || msg.message?.buttonsResponseMessage?.selectedButtonId || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId || msg.message?.templateButtonReplyMessage?.selectedId || "";
+  if (!body) {
+    printMessageActivity({ msgType, pushName: msg.pushName || "", senderNumber, isGroup });
+    logger.info({ jid, msgType }, "No text body \u2014 skipped command processing");
+    return;
+  }
   let groupSettings = null;
   let isSenderGroupAdmin = false;
   let isBotGroupAdmin = false;
@@ -33962,7 +33972,7 @@ async function handleMessage(sock, msg) {
         if (pNum === botNumber) isBotGroupAdmin = isAdmin;
       }
       const msgKey = msg.key;
-      if (groupSettings && body) {
+      if (groupSettings) {
         if (groupSettings.antilink && !isOwner && !isSenderGroupAdmin && URL_REGEX.test(body)) {
           await sock.sendMessage(jid, { delete: msgKey });
           await sock.sendMessage(jid, { text: "Links are not allowed in this group." });
@@ -34000,10 +34010,6 @@ async function handleMessage(sock, msg) {
     groupName,
     groupNumber
   });
-  if (!body) {
-    logger.info({ jid, msgType }, "No text body \u2014 skipped command processing");
-    return;
-  }
   logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "\u{1F4DD} Body extracted");
   if (!body.startsWith(prefix)) {
     if (isGroup && groupSettings?.autoReply) {

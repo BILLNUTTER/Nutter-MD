@@ -92,9 +92,9 @@ function buildMenuText(prefix: string, pushName: string): string {
 
 export async function handlePing(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
   const start = Date.now();
-  await sock.sendMessage(ctx.jid, { text: "🏓 Pong!" });
+  await sock.sendMessage(ctx.jid, { text: "🏓 Measuring..." }, { quoted: msg });
   const latency = Date.now() - start;
-  await sock.sendMessage(ctx.jid, { text: `*Latency:* ${latency}ms` });
+  await sock.sendMessage(ctx.jid, { text: `🏓 *Pong!*\n*Latency:* ${latency}ms` }, { quoted: msg });
 }
 
 export async function handleAlive(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
@@ -110,27 +110,31 @@ export async function handleMenu(sock: WASocket, msg: proto.IWebMessageInfo, ctx
   const senderJid = msg.key.participant || (msg.key.fromMe ? (sock.user?.id || "") : (msg.key.remoteJid || ""));
   const pushName = msg.pushName || senderJid.split("@")[0].split(":")[0];
 
-  // 1. Send the menu image
-  const imgBuf = getMenuImageBuffer();
-  if (imgBuf) {
-    try {
-      await sock.sendMessage(ctx.jid, {
-        image: imgBuf,
-        caption: "",
-        mimetype: "image/jpeg",
-      });
-    } catch (err) {
-      logger.warn({ err }, "Could not send menu image");
-    }
-  }
-
-  // 2. Send the formatted text menu with @mention
   const menuText = `Hey @${senderJid.split("@")[0]} 🤖\n\n` + buildMenuText(prefix, pushName);
 
-  await sock.sendMessage(ctx.jid, {
-    text: menuText,
-    mentions: [senderJid],
-  });
+  const imgBuf = getMenuImageBuffer();
+
+  if (imgBuf) {
+    // Single message: image + caption + mention (exactly how RAVEN-BOT sends it)
+    await sock.sendMessage(
+      ctx.jid,
+      {
+        image: imgBuf,
+        caption: menuText,
+        mimetype: "image/jpeg",
+        mentions: [senderJid],
+      },
+      { quoted: msg }
+    );
+  } else {
+    // Fallback if image asset is missing — text only
+    logger.warn("Menu image not found — sending text only");
+    await sock.sendMessage(
+      ctx.jid,
+      { text: menuText, mentions: [senderJid] },
+      { quoted: msg }
+    );
+  }
 }
 
 export async function handleOwner(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext) {
