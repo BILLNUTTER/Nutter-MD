@@ -33644,9 +33644,10 @@ async function handleMessage(sock, msg) {
   const jid = msg.key.remoteJid;
   if (!jid) return;
   const isGroup = jid.endsWith("@g.us");
-  const senderJid = isGroup ? msg.key.participant || "" : jid;
-  const senderNumber = senderJid.split("@")[0];
-  const isOwner = senderNumber === ownerNumber;
+  const botJidFull = sock.user?.id || "";
+  const senderJid = isGroup ? msg.key.participant || botJidFull : msg.key.fromMe ? botJidFull : jid;
+  const senderNumber = senderJid.split(":")[0].split("@")[0];
+  const isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
   const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
   if (botMode === "private" && !isOwner) return;
   const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "";
@@ -34489,14 +34490,13 @@ async function onFirstConnect(sock) {
   const prefix = process.env["PREFIX"] || ".";
   if (ownerNumber) {
     const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+    const botNumber = (sock.user?.id || "").split(":")[0].split("@")[0];
     const welcome = [
-      `*\xB0\u2550\u2550\u2550\u2550\u2550 NUTTER-XMD \u2550\u2550\u2550\u2550\u2550\xB0*`,
-      ``,
-      `   \u1D0D\u1D0F\u1D05\u1D07   \u203A *${mode}*`,
-      `   \u1D18\u0280\u1D07\u0493\u026Ax  \u203A *[ ${prefix} ]*`,
-      ``,
-      `*\xB0\u2550\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2248\u2550\xB0*`
-    ].join("\n");
+      `\u2705 \u{1D5D6}\u{1D5FC}\u{1D5FB}\u{1D5FB}\u{1D5F2}\u{1D5F0}\u{1D601}\u{1D5F2}\u{1D5F1}  \u254D>\u301A\u{1D5E1}\u{1D5E8}\u{1D5E7}\u{1D5E7}\u{1D5D8}\u{1D5E5}\u{1D5EB}-\u{1D5E0}\u{1D5D7}\u301B`,
+      `\u{1F465} \u{1D5E0}\u{1D5FC}\u{1D5F1}\u{1D5F2}  \u254D>\u301A${mode}\u301B`,
+      `\u{1F464} \u{1D5E3}\u{1D5FF}\u{1D5F2}\u{1D5F3}\u{1D5F6}\u{1D605}  \u254D>\u301A ${prefix} \u301B`,
+      botNumber ? `\u{1F4F1} \u{1D5D5}\u{1D5FC}\u{1D601}  \u254D>\u301A+${botNumber}\u301B` : ""
+    ].filter(Boolean).join("\n");
     try {
       await sock.sendMessage(ownerJid, { text: welcome });
       logger.info("\u2705 Sent welcome message to owner");
@@ -34595,7 +34595,6 @@ async function connectBot(sessionAuth) {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
       try {
         await handleMessage(sock, msg);
       } catch (err) {

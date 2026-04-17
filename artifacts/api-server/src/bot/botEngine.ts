@@ -37,14 +37,13 @@ async function onFirstConnect(sock: WASocket) {
   // Send styled welcome message to owner
   if (ownerNumber) {
     const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+    const botNumber = (sock.user?.id || "").split(":")[0].split("@")[0];
     const welcome = [
-      `*°═════ NUTTER-XMD ═════°*`,
-      ``,
-      `   ᴍᴏᴅᴇ   › *${mode}*`,
-      `   ᴘʀᴇғɪx  › *[ ${prefix} ]*`,
-      ``,
-      `*°═≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈═°*`,
-    ].join("\n");
+      `✅ 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱  ╍>〚𝗡𝗨𝗧𝗧𝗘𝗥𝗫-𝗠𝗗〛`,
+      `👥 𝗠𝗼𝗱𝗲  ╍>〚${mode}〛`,
+      `👤 𝗣𝗿𝗲𝗳𝗶𝘅  ╍>〚 ${prefix} 〛`,
+      botNumber ? `📱 𝗕𝗼𝘁  ╍>〚+${botNumber}〛` : "",
+    ].filter(Boolean).join("\n");
 
     try {
       await sock.sendMessage(ownerJid, { text: welcome });
@@ -172,7 +171,6 @@ async function connectBot(sessionAuth: {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
       try {
         await handleMessage(sock, msg);
       } catch (err) {

@@ -53,9 +53,19 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   if (!jid) return;
 
   const isGroup = jid.endsWith("@g.us");
-  const senderJid = isGroup ? msg.key.participant || "" : jid;
-  const senderNumber = senderJid.split("@")[0];
-  const isOwner = senderNumber === ownerNumber;
+
+  // In a group, participant tells us who sent it (even for fromMe).
+  // In a DM, fromMe means the owner sent it from their primary phone;
+  // the remoteJid is the recipient, not the sender.
+  const botJidFull = sock.user?.id || "";
+  const senderJid = isGroup
+    ? msg.key.participant || botJidFull
+    : msg.key.fromMe
+      ? botJidFull
+      : jid;
+
+  const senderNumber = senderJid.split(":")[0].split("@")[0];
+  const isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
 
   const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
   if (botMode === "private" && !isOwner) return;
