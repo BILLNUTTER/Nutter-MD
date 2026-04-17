@@ -13,6 +13,8 @@ const silentLogger = pino({ level: "silent" });
 
 let failureCount = 0;
 let hasSentWelcome = false;
+/** Epoch-ms when the current WA connection opened. Used to skip stale replayed messages. */
+let connectedAt = 0;
 
 export async function startBot() {
   const sessionAuth = await loadSessionFromEnv();
@@ -134,6 +136,8 @@ async function connectBot(sessionAuth: {
     msgRetryCounterCache,
     logger: silentLogger,
     syncFullHistory: false,
+    // Never cache group metadata in memory — prevents RAM ballooning on busy groups.
+    cachedGroupMetadata: async () => undefined,
     // getMessage is called by Baileys when decryption fails (Bad MAC / missing session key).
     // Returning undefined signals Baileys to send a key-retry request to the sender so
     // they re-send the message with a fresh Signal session — never return a fake empty
@@ -170,6 +174,7 @@ async function connectBot(sessionAuth: {
 
     if (connection === "open") {
       failureCount = 0;
+      connectedAt = Date.now();
       logger.info("✅ NUTTER-XMD connected to WhatsApp");
 
       // Upload fresh pre-keys so the WA server always has keys ready for new
@@ -325,6 +330,17 @@ async function connectBot(sessionAuth: {
         } else {
           logger.info({ stubType, jid: remoteJid }, "↩ Protocol notification — skipped");
         }
+        continue;
+      }
+
+      // ── Stale-message guard ───────────────────────────────────────────────
+      // WhatsApp replays pending messages when the bot reconnects. Skip any
+      // message that was sent more than 15 s before this connection opened so
+      // stale commands don't get processed as if they just arrived.
+      const sentAt = Number(msg.messageTimestamp) * 1000 || 0;
+      const cutoff = connectedAt - 15_000;
+      if (cutoff > 0 && sentAt > 0 && sentAt < cutoff) {
+        logger.info({ jid: remoteJid, sentAt, cutoff }, "⏩ Stale message — skipped (pre-connection)");
         continue;
       }
 

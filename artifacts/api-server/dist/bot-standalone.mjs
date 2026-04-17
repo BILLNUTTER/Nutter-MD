@@ -6067,7 +6067,7 @@ async function handleStatusMessage(sock, msg) {
       const emojiList = (settings.statusLikeEmoji || "\u2764\uFE0F").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "\u2764\uFE0F";
       await sock.sendMessage(msg.key.participant, {
-        react: { text: emoji, key: msg.key }
+        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } }
       });
     } catch {
     }
@@ -6335,6 +6335,7 @@ var RECONNECT_DELAY_MS = 5e3;
 var silentLogger = (0, import_pino2.default)({ level: "silent" });
 var failureCount = 0;
 var hasSentWelcome = false;
+var connectedAt = 0;
 async function startBot() {
   const sessionAuth = await loadSessionFromEnv();
   if (!sessionAuth) {
@@ -6431,6 +6432,8 @@ async function connectBot(sessionAuth) {
     msgRetryCounterCache,
     logger: silentLogger,
     syncFullHistory: false,
+    // Never cache group metadata in memory — prevents RAM ballooning on busy groups.
+    cachedGroupMetadata: async () => void 0,
     // getMessage is called by Baileys when decryption fails (Bad MAC / missing session key).
     // Returning undefined signals Baileys to send a key-retry request to the sender so
     // they re-send the message with a fresh Signal session — never return a fake empty
@@ -6457,6 +6460,7 @@ async function connectBot(sessionAuth) {
     const { connection, lastDisconnect } = update;
     if (connection === "open") {
       failureCount = 0;
+      connectedAt = Date.now();
       logger.info("\u2705 NUTTER-XMD connected to WhatsApp");
       try {
         await sock.uploadPreKeys();
@@ -6554,6 +6558,12 @@ async function connectBot(sessionAuth) {
         } else {
           logger.info({ stubType, jid: remoteJid }, "\u21A9 Protocol notification \u2014 skipped");
         }
+        continue;
+      }
+      const sentAt = Number(msg.messageTimestamp) * 1e3 || 0;
+      const cutoff = connectedAt - 15e3;
+      if (cutoff > 0 && sentAt > 0 && sentAt < cutoff) {
+        logger.info({ jid: remoteJid, sentAt, cutoff }, "\u23E9 Stale message \u2014 skipped (pre-connection)");
         continue;
       }
       const jid = msg.key.remoteJid;

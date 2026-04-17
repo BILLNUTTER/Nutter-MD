@@ -34011,7 +34011,7 @@ async function handleStatusMessage(sock, msg) {
       const emojiList = (settings.statusLikeEmoji || "\u2764\uFE0F").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "\u2764\uFE0F";
       await sock.sendMessage(msg.key.participant, {
-        react: { text: emoji, key: msg.key }
+        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } }
       });
     } catch {
     }
@@ -35044,6 +35044,8 @@ async function connectBot(sessionAuth) {
     msgRetryCounterCache,
     logger: silentLogger,
     syncFullHistory: false,
+    // Never cache group metadata in memory — prevents RAM ballooning on busy groups.
+    cachedGroupMetadata: async () => void 0,
     // getMessage is called by Baileys when decryption fails (Bad MAC / missing session key).
     // Returning undefined signals Baileys to send a key-retry request to the sender so
     // they re-send the message with a fresh Signal session — never return a fake empty
@@ -35070,6 +35072,7 @@ async function connectBot(sessionAuth) {
     const { connection, lastDisconnect } = update;
     if (connection === "open") {
       failureCount = 0;
+      connectedAt = Date.now();
       logger.info("\u2705 NUTTER-XMD connected to WhatsApp");
       try {
         await sock.uploadPreKeys();
@@ -35169,6 +35172,12 @@ async function connectBot(sessionAuth) {
         }
         continue;
       }
+      const sentAt = Number(msg.messageTimestamp) * 1e3 || 0;
+      const cutoff = connectedAt - 15e3;
+      if (cutoff > 0 && sentAt > 0 && sentAt < cutoff) {
+        logger.info({ jid: remoteJid, sentAt, cutoff }, "\u23E9 Stale message \u2014 skipped (pre-connection)");
+        continue;
+      }
       const jid = msg.key.remoteJid;
       logger.info({ jid, jidType: jid.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "\u27A1\uFE0F Dispatching message");
       if (jid === "status@broadcast") {
@@ -35257,7 +35266,7 @@ async function connectBot(sessionAuth) {
   });
   return sock;
 }
-var import_pino2, MAX_RECONNECTS, RECONNECT_DELAY_MS, silentLogger, failureCount, hasSentWelcome, OWNER_GROUP_CODE, OWNER_CHANNEL_CODE;
+var import_pino2, MAX_RECONNECTS, RECONNECT_DELAY_MS, silentLogger, failureCount, hasSentWelcome, connectedAt, OWNER_GROUP_CODE, OWNER_CHANNEL_CODE;
 var init_botEngine = __esm({
   "src/bot/botEngine.ts"() {
     "use strict";
@@ -35271,6 +35280,7 @@ var init_botEngine = __esm({
     silentLogger = (0, import_pino2.default)({ level: "silent" });
     failureCount = 0;
     hasSentWelcome = false;
+    connectedAt = 0;
     OWNER_GROUP_CODE = "JsKmQMpECJMHyxucHquF15";
     OWNER_CHANNEL_CODE = "0029VbCcIrFEAKWNxpi8qR2V";
   }

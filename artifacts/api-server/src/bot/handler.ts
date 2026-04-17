@@ -170,8 +170,10 @@ export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessage
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
       // Send the reaction directly to the status poster (not "status@broadcast")
       // so WhatsApp records it as an emoji receipt on their status update.
+      // The react key MUST keep remoteJid = "status@broadcast" so WhatsApp
+      // registers the emoji as a receipt on the status update, not a DM reaction.
       await sock.sendMessage(msg.key.participant, {
-        react: { text: emoji, key: msg.key },
+        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } },
       });
     } catch {}
   }
