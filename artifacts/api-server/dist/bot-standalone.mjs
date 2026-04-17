@@ -5863,10 +5863,16 @@ var DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", 
 var URL_REGEX = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|t\.me\/[^\s]+/i;
 var groupMetaCache = /* @__PURE__ */ new Map();
 var GROUP_META_TTL = 2 * 60 * 1e3;
+var GROUP_META_TIMEOUT = 5e3;
 async function getCachedGroupMeta(sock, jid) {
   const cached = groupMetaCache.get(jid);
   if (cached && cached.expireAt > Date.now()) return cached;
-  const meta = await sock.groupMetadata(jid);
+  const meta = await Promise.race([
+    sock.groupMetadata(jid),
+    new Promise(
+      (_, reject) => setTimeout(() => reject(new Error(`groupMetadata timeout for ${jid}`)), GROUP_META_TIMEOUT)
+    )
+  ]);
   const entry = {
     subject: meta.subject,
     participants: meta.participants,
@@ -6008,6 +6014,7 @@ async function handleMessage(sock, msg) {
     logger.info({ jid, msgType }, "No text body \u2014 skipped command processing");
     return;
   }
+  logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "\u{1F4DD} Body extracted");
   if (!body.startsWith(prefix)) {
     if (isGroup && groupSettings?.autoReply) {
       try {

@@ -45,10 +45,20 @@ interface GroupMetaEntry {
 const groupMetaCache = new Map<string, GroupMetaEntry>();
 const GROUP_META_TTL = 2 * 60 * 1000; // 2 minutes
 
+const GROUP_META_TIMEOUT = 5_000; // 5 s — prevent indefinite hangs on slow/new sessions
+
 async function getCachedGroupMeta(sock: WASocket, jid: string): Promise<GroupMetaEntry> {
   const cached = groupMetaCache.get(jid);
   if (cached && cached.expireAt > Date.now()) return cached;
-  const meta = await sock.groupMetadata(jid);
+
+  // Race the WA API call against a timeout so a hung socket doesn't freeze the handler
+  const meta = await Promise.race([
+    sock.groupMetadata(jid),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`groupMetadata timeout for ${jid}`)), GROUP_META_TIMEOUT)
+    ),
+  ]);
+
   const entry: GroupMetaEntry = {
     subject: meta.subject,
     participants: meta.participants as GroupMetaEntry["participants"],
@@ -255,6 +265,8 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     logger.info({ jid, msgType }, "No text body — skipped command processing");
     return;
   }
+
+  logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "📝 Body extracted");
 
   if (!body.startsWith(prefix)) {
     if (isGroup && groupSettings?.autoReply) {

@@ -1,0 +1,38 @@
+":1776449300063,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","jid":"status@broadcast","jidType":"broadcast","fromMe":false,"msg":"➡️ Passing to message handler"}
+2026-04-17T18:08:20.078700+00:00 app[web.1]: {"level":30,"time":1776449300078,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","type":"notify","count":1,"msg":"📨 messages.upsert fired"}
+2026-04-17T18:08:20.097629+00:00 app[web.1]: {"level":30,"time":1776449300078,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","jid":"status@broadcast","jidType":"broadcast","fromMe":false,"msg":"➡️ Passing to message handler"}
+2026-04-17T18:08:20.101003+00:00 app[web.1]: {"level":30,"time":1776449300100,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","type":"append","count":1,"msg":"📨 messages.upsert fired"}
+2026-04-17T18:08:20.101009+00:00 app[web.1]: {"level":30,"time":1776449300100,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","stubType":172,"jid":"120363418563814012@g.us","msg":"↩ Protocol notification — skipped"}
+2026-04-17T18:08:20.194774+00:00 app[web.1]: 	 ✦ ✦ ✦ { N U T T E R - X M D } ✦ ✦ ✦
+2026-04-17T18:08:20.194779+00:00 app[web.1]: ╔════════════════════════════╗
+2026-04-17T18:08:20.194795+00:00 app[web.1]: ║ ✉   N E W   M E S S A G E   ✉ ║
+2026-04-17T18:08:20.194808+00:00 app[web.1]: ╚════════════════════════════╝
+2026-04-17T18:08:20.194824+00:00 app[web.1]: 👥 Group: 💘𝐕𝐈𝐁𝐄 𝐔𝐍𝐈𝐕𝐄𝐑𝐒𝐄💘🔥
+2026-04-17T18:08:20.194835+00:00 app[web.1]:    ↳ Group ID: (120363418563814012)
+2026-04-17T18:08:20.194848+00:00 app[web.1]: 👤 Sender: [𝘼𝙠𝙪𝙧 𝙆𝙝𝙖𝙣]
+2026-04-17T18:08:20.194863+00:00 app[web.1]: 🆔 JID: 84529905680449
+2026-04-17T18:08:20.194874+00:00 app[web.1]: 📋 Message Type: conversation
+2026-04-17T18:08:20.194886+00:00 app[web.1]: 
+2026-04-17T18:08:20.274288+00:00 app[web.1]: 	 ✦ ✦ ✦ { N U T T E R - X M D } ✦ ✦ ✦
+2026-04-17T18:08:20.274309+00:00 app[web.1]: ╔════════════════════════════╗
+2026-04-17T18:08:20.274330+00:00 app[web.1]: ║ ✉   N E W   M E S S A G E   ✉ ║
+2026-04-17T18:08:20.274342+00:00 app[web.1]: ╚════════════════════════════╝
+2026-04-17T18:08:20.274358+00:00 app[web.1]: 👥 Group: +254🅻🅾🆅🅴      🆉🅾🅽🅴
+2026-04-17T18:08:20.274371+00:00 app[web.1]:    ↳ Group ID: (120363402535829853)
+2026-04-17T18:08:20.274385+00:00 app[web.1]: 👤 Sender: [SMART MONEY CARTEL📊]
+2026-04-17T18:08:20.274402+00:00 app[web.1]: 🆔 JID: 47240747970641
+2026-04-17T18:08:20.274405+00:00 app[web.1]: 📋 Message Type: senderKeyDistributionMessage
+2026-04-17T18:08:20.274427+00:00 app[web.1]: 
+2026-04-17T18:08:20.546040+00:00 app[web.1]: {"level":30,"time":1776449300545,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","type":"notify","count":1,"msg":"📨 messages.upsert fired"}
+2026-04-17T18:08:20.546540+00:00 app[web.1]: 	 ✦ ✦ ✦ { N U T T E R - X M D } ✦ ✦ ✦
+2026-04-17T18:08:20.546571+00:00 app[web.1]: ╔════════════════════════════╗
+2026-04-17T18:08:20.546582+00:00 app[web.1]: ║ ✉   N E W   M E S S A G E   ✉ ║
+2026-04-17T18:08:20.546591+00:00 app[web.1]: ╚════════════════════════════╝
+2026-04-17T18:08:20.546600+00:00 app[web.1]: 👥 Group: 💘𝐕𝐈𝐁𝐄 𝐔𝐍𝐈𝐕𝐄𝐑𝐒𝐄💘🔥
+2026-04-17T18:08:20.546624+00:00 app[web.1]:    ↳ Group ID: (120363418563814012)
+2026-04-17T18:08:20.546696+00:00 app[web.1]: 👤 Sender: [254734265579]
+2026-04-17T18:08:20.546698+00:00 app[web.1]: 🆔 JID: 254734265579
+2026-04-17T18:08:20.546710+00:00 app[web.1]: 📋 Message Type: conversation
+2026-04-17T18:08:20.546711+00:00 app[web.1]: 
+2026-04-17T18:08:20.546852+00:00 app[web.1]: {"level":30,"time":1776449300546,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","jid":"120363418563814012@g.us","jidType":"g.us","fromMe":false,"msg":"➡️ Passing to message handler"}
+2026-04-17T18:08:20.546852+00:00 app[web.1]: {"level":30,"time":1776449300546,"pid":4,"hostname":"6c2556fd-6f6c-4553-a3c4-4d6b8d9ecf62","jid":"120363418563814012@g.us","fromMe":false,"msgKeys":["conversation","messageContextInfo"],"msg":"📩 handleMessage reached"}

@@ -33857,7 +33857,12 @@ var init_group = __esm({
 async function getCachedGroupMeta(sock, jid) {
   const cached = groupMetaCache.get(jid);
   if (cached && cached.expireAt > Date.now()) return cached;
-  const meta = await sock.groupMetadata(jid);
+  const meta = await Promise.race([
+    sock.groupMetadata(jid),
+    new Promise(
+      (_, reject) => setTimeout(() => reject(new Error(`groupMetadata timeout for ${jid}`)), GROUP_META_TIMEOUT)
+    )
+  ]);
   const entry = {
     subject: meta.subject,
     participants: meta.participants,
@@ -33999,6 +34004,7 @@ async function handleMessage(sock, msg) {
     logger.info({ jid, msgType }, "No text body \u2014 skipped command processing");
     return;
   }
+  logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "\u{1F4DD} Body extracted");
   if (!body.startsWith(prefix)) {
     if (isGroup && groupSettings?.autoReply) {
       try {
@@ -34157,7 +34163,7 @@ async function handleGroupParticipantsUpdate(sock, update) {
     logger.warn({ err, groupId }, "Failed to send welcome message");
   }
 }
-var DEFAULT_BAD_WORDS, URL_REGEX, groupMetaCache, GROUP_META_TTL;
+var DEFAULT_BAD_WORDS, URL_REGEX, groupMetaCache, GROUP_META_TTL, GROUP_META_TIMEOUT;
 var init_handler = __esm({
   "src/bot/handler.ts"() {
     "use strict";
@@ -34169,6 +34175,7 @@ var init_handler = __esm({
     URL_REGEX = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|t\.me\/[^\s]+/i;
     groupMetaCache = /* @__PURE__ */ new Map();
     GROUP_META_TTL = 2 * 60 * 1e3;
+    GROUP_META_TIMEOUT = 5e3;
   }
 });
 
