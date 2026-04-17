@@ -226,119 +226,117 @@ async function connectBot(sessionAuth: {
   });
 
   // ── Messages ─────────────────────────────────────────────────────────────────
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+  // ── Non-blocking message dispatch helper ─────────────────────────────────────
+  // We never `await` inside the messages.upsert loop itself.  Instead, all async
+  // work is deferred with setImmediate so the Baileys event loop (and other
+  // sock.ev handlers) can keep running at full speed between messages.
+  // Errors are caught per-message so one bad message never stalls the rest.
+  function dispatchAsync(label: string, fn: () => Promise<void>) {
+    setImmediate(() => {
+      fn().catch((err) => logger.error({ err, label }, "Error in async message handler"));
+    });
+  }
+
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
     // Log EVERY upsert event regardless of type so we can see what's arriving
     logger.info({ type, count: messages.length }, "📨 messages.upsert fired");
 
     // Accept both "notify" (real-time incoming) and "append" (some linked-device configs).
-    // Own sent messages (fromMe=true) are filtered per-message below.
     if (type !== "notify" && type !== "append") {
       logger.info({ type }, "↩ Skipped — type is neither notify nor append");
       return;
     }
 
     const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/\D/g, "");
-
-    // Derive the bot's own base phone number (strip device suffix and domain)
-    const botNumber = (sock.user?.id || "").split(":")[0].split("@")[0];
+    const botNumber   = (sock.user?.id || "").split(":")[0].split("@")[0];
 
     for (const msg of messages) {
-      try {
-        const remoteJid = msg.key?.remoteJid || "";
-        const remoteNumber = remoteJid.split(":")[0].split("@")[0];
+      // ── Synchronous filtering (no awaits — keeps the loop tight) ─────────
+      const remoteJid    = msg.key?.remoteJid || "";
+      const remoteNumber = remoteJid.split(":")[0].split("@")[0];
 
-        if (msg.key?.fromMe) {
-          // Three fromMe scenarios:
-          //   1. Self-chat: remoteJid = bot's own number (owner texting themselves) → process
-          //   2. Group:    remoteJid ends with @g.us → process (owner types command from
-          //                their phone into a group; prefix check prevents echo loops)
-          //   3. DM to other contact: remoteJid = someone else → skip (bot's sent reply)
-          const isGroupJid = remoteJid.endsWith("@g.us");
-          const isSelfChat = botNumber && remoteNumber === botNumber;
+      if (msg.key?.fromMe) {
+        const isGroupJid = remoteJid.endsWith("@g.us");
+        const isSelfChat = !!botNumber && remoteNumber === botNumber;
 
-          if (!isSelfChat && !isGroupJid) {
-            logger.info({ jid: remoteJid }, "↩ fromMe DM echo — skipped");
-            continue;
-          }
-
-          if (isSelfChat) {
-            logger.info({ jid: remoteJid }, "👤 Self-chat — processing as owner command");
-          }
-          // isGroupJid: falls through silently; prefix check rejects bot's own group echoes
-        }
-
-        const hasMessage = !!msg.message;
-        const hasJid = !!msg.key?.remoteJid;
-        if (!hasMessage || !hasJid) {
-          // stubType > 0 = protocol notification (join, leave, etc.) — not a decrypt failure
-          const stubType = msg.messageStubType ?? 0;
-          if (stubType === 0) {
-            logger.warn(
-              { jid: remoteJid, hasMessage, hasJid, fromMe: msg.key?.fromMe, stubType },
-              "⚠️ Decryption failure — content is null. Session mismatch? Re-pair to get fresh session files."
-            );
-          } else {
-            logger.info({ stubType, jid: remoteJid }, "↩ Protocol notification — skipped");
-          }
+        if (!isSelfChat && !isGroupJid) {
+          logger.info({ jid: remoteJid }, "↩ fromMe DM echo — skipped");
           continue;
         }
-
-        const jid = msg.key.remoteJid;
-        logger.info({ jid, jidType: jid?.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "➡️ Passing to message handler");
-
-        // Status broadcasts: auto-view / auto-like
-        if (jid === "status@broadcast") {
-          await handleStatusMessage(sock, msg);
-          continue;
+        if (isSelfChat) {
+          logger.info({ jid: remoteJid }, "👤 Self-chat — processing as owner command");
         }
-
-        // ── Antidelete: detect revoke protocol messages ───────────────────────
-        // type 0 = REVOKE ("delete for everyone")
-        const proto = msg.message.protocolMessage;
-        if (proto && proto.type === 0 && proto.key?.id) {
-          const deletedMsg = popCachedMessage(proto.key.id);
-          if (deletedMsg && ownerNumber) {
-            const srcJid = deletedMsg.key.remoteJid || "";
-            const isGroup = srcJid.endsWith("@g.us");
-
-            // Check antidelete setting for this chat
-            const gs = isGroup ? getGroupSettings(srcJid) : null;
-            const antiDeleteOn = isGroup ? gs?.antiDelete : true; // DMs: always forward to owner
-
-            if (antiDeleteOn) {
-              const ownerJid = `${ownerNumber}@s.whatsapp.net`;
-              const senderNum = (deletedMsg.key.participant || deletedMsg.key.remoteJid || "")
-                .split(":")[0].split("@")[0];
-              const where = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
-              const header = `🗑 *Deleted message detected*\n👤 From: ${deletedMsg.pushName || senderNum} (${senderNum})\n📍 In: ${where}`;
-
-              // Forward the original message content
-              const innerMsg = deletedMsg.message;
-              if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
-                const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
-                await sock.sendMessage(ownerJid, { text: `${header}\n\n💬 "${text}"` });
-              } else if (innerMsg?.imageMessage) {
-                await sock.sendMessage(ownerJid, { text: header });
-                await sock.sendMessage(ownerJid, {
-                  forward: deletedMsg,
-                  force: true,
-                } as Parameters<typeof sock.sendMessage>[1]);
-              } else {
-                await sock.sendMessage(ownerJid, { text: `${header}\n\n📎 (media/unsupported message type)` });
-              }
-              logger.info({ from: senderNum, jid: srcJid }, "🗑 Antidelete: forwarded deleted message to owner");
-            }
-          }
-          continue; // REVOKE messages don't need further handling
-        }
-
-        // Cache real messages for antidelete lookup
-        cacheMessage(msg);
-
-        await handleMessage(sock, msg);
-      } catch (err) {
-        logger.error({ err }, "Error handling message");
       }
+
+      const hasMessage = !!msg.message;
+      const hasJid     = !!msg.key?.remoteJid;
+      if (!hasMessage || !hasJid) {
+        const stubType = msg.messageStubType ?? 0;
+        if (stubType === 0) {
+          logger.warn(
+            { jid: remoteJid, hasMessage, hasJid, fromMe: msg.key?.fromMe },
+            "⚠️ Decryption failure — content is null. Re-pair to get fresh session files."
+          );
+        } else {
+          logger.info({ stubType, jid: remoteJid }, "↩ Protocol notification — skipped");
+        }
+        continue;
+      }
+
+      const jid = msg.key.remoteJid!;
+      logger.info({ jid, jidType: jid.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "➡️ Dispatching message");
+
+      // Status broadcasts ────────────────────────────────────────────────────
+      if (jid === "status@broadcast") {
+        dispatchAsync("handleStatusMessage", () => handleStatusMessage(sock, msg));
+        continue;
+      }
+
+      // Antidelete: detect REVOKE protocol messages ──────────────────────────
+      // type 0 = "delete for everyone"
+      const proto = msg.message!.protocolMessage;
+      if (proto && proto.type === 0 && proto.key?.id) {
+        // popCachedMessage is sync — do it now so we don't race with another
+        // revoke that might arrive a few ms later in the same event tick.
+        const deletedMsg = popCachedMessage(proto.key.id);
+
+        if (deletedMsg && ownerNumber) {
+          const capturedDeleted = deletedMsg; // capture for async closure
+          dispatchAsync("antidelete", async () => {
+            const srcJid  = capturedDeleted.key.remoteJid || "";
+            const isGroup = srcJid.endsWith("@g.us");
+            const gs      = isGroup ? getGroupSettings(srcJid) : null;
+            const antiDeleteOn = isGroup ? gs?.antiDelete : true;
+
+            if (!antiDeleteOn) return;
+
+            const ownerJid  = `${ownerNumber}@s.whatsapp.net`;
+            const senderNum = (capturedDeleted.key.participant || capturedDeleted.key.remoteJid || "")
+              .split(":")[0].split("@")[0];
+            const where  = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
+            const header = `🗑 *Deleted message detected*\n👤 From: ${capturedDeleted.pushName || senderNum} (${senderNum})\n📍 In: ${where}`;
+
+            const innerMsg = capturedDeleted.message;
+            if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
+              const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
+              await sock.sendMessage(ownerJid, { text: `${header}\n\n💬 "${text}"` });
+            } else if (innerMsg?.imageMessage) {
+              await sock.sendMessage(ownerJid, { text: header });
+              await sock.sendMessage(ownerJid, { forward: capturedDeleted, force: true } as Parameters<typeof sock.sendMessage>[1]);
+            } else {
+              await sock.sendMessage(ownerJid, { text: `${header}\n\n📎 (media/unsupported message type)` });
+            }
+            logger.info({ from: senderNum, jid: srcJid }, "🗑 Antidelete: forwarded deleted message to owner");
+          });
+        }
+        continue;
+      }
+
+      // Cache for future antidelete lookups (sync — must happen before next msg)
+      cacheMessage(msg);
+
+      // ── Command / feature handler — fully non-blocking ────────────────────
+      dispatchAsync("handleMessage", () => handleMessage(sock, msg));
     }
   });
 

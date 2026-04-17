@@ -176,7 +176,7 @@ export async function startPairingSession(
       // and tells the user to wait while group keys are being collected.
       try {
         await sock.sendMessage(jid, {
-          text: `*NUTTER-XMD* is now linked! ✅\n\n⏳ Please wait...`,
+          text: `*NUTTER-XMD* is now linked! ✅\n\n⏳ Generating your session ID...`,
         });
         logger.info({ jid }, "Sent 'linked' notification — entering key-settling phase");
       } catch (err) {
@@ -410,7 +410,7 @@ export async function startQrSession(attempt = 0): Promise<void> {
       if (jid) {
         try {
           await sock.sendMessage(jid, {
-            text: `*NUTTER-XMD* is now linked! ✅\n\n⏳ Please wait...`,
+            text: `*NUTTER-XMD* is now linked! ✅\n\n⏳ Generating your session ID...`,
           });
           logger.info({ jid }, "Sent 'linked' notification — entering key-settling phase");
         } catch (err) {

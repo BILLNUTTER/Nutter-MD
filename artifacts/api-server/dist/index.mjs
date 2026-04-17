@@ -28463,7 +28463,14 @@ async function loadSessionFromEnv() {
     }
     const authState = await useMultiFileAuthState(sessionDir);
     activeBotSessionDir = sessionDir;
-    logger.info({ sessionDir, fileCount }, "Session loaded from SESSION_ID env var");
+    const allFiles = Object.keys(fileMap);
+    const sessionFiles = allFiles.filter((f) => f.startsWith("session-")).length;
+    const senderKeyFiles = allFiles.filter((f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json").length;
+    const preKeyFiles = allFiles.filter((f) => f.startsWith("pre-key-")).length;
+    logger.info(
+      { sessionDir, fileCount, sessionFiles, senderKeyFiles, preKeyFiles },
+      "\u{1F4E6} SESSION_ID loaded \u2014 session files control DM decrypt speed; sender-key files control group decrypt speed"
+    );
     return authState;
   } catch (err) {
     logger.error({ err }, "Failed to parse SESSION_ID \u2014 re-pair on the pairing page to get a new one");
@@ -35091,7 +35098,12 @@ async function connectBot(sessionAuth) {
       setTimeout(() => void connectBot(sessionAuth), RECONNECT_DELAY_MS);
     }
   });
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+  function dispatchAsync(label, fn) {
+    setImmediate(() => {
+      fn().catch((err) => logger.error({ err, label }, "Error in async message handler"));
+    });
+  }
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
     logger.info({ type, count: messages.length }, "\u{1F4E8} messages.upsert fired");
     if (type !== "notify" && type !== "append") {
       logger.info({ type }, "\u21A9 Skipped \u2014 type is neither notify nor append");
@@ -35100,82 +35112,77 @@ async function connectBot(sessionAuth) {
     const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/\D/g, "");
     const botNumber = (sock.user?.id || "").split(":")[0].split("@")[0];
     for (const msg of messages) {
-      try {
-        const remoteJid = msg.key?.remoteJid || "";
-        const remoteNumber = remoteJid.split(":")[0].split("@")[0];
-        if (msg.key?.fromMe) {
-          const isGroupJid = remoteJid.endsWith("@g.us");
-          const isSelfChat = botNumber && remoteNumber === botNumber;
-          if (!isSelfChat && !isGroupJid) {
-            logger.info({ jid: remoteJid }, "\u21A9 fromMe DM echo \u2014 skipped");
-            continue;
-          }
-          if (isSelfChat) {
-            logger.info({ jid: remoteJid }, "\u{1F464} Self-chat \u2014 processing as owner command");
-          }
-        }
-        const hasMessage = !!msg.message;
-        const hasJid = !!msg.key?.remoteJid;
-        if (!hasMessage || !hasJid) {
-          const stubType = msg.messageStubType ?? 0;
-          if (stubType === 0) {
-            logger.warn(
-              { jid: remoteJid, hasMessage, hasJid, fromMe: msg.key?.fromMe, stubType },
-              "\u26A0\uFE0F Decryption failure \u2014 content is null. Session mismatch? Re-pair to get fresh session files."
-            );
-          } else {
-            logger.info({ stubType, jid: remoteJid }, "\u21A9 Protocol notification \u2014 skipped");
-          }
+      const remoteJid = msg.key?.remoteJid || "";
+      const remoteNumber = remoteJid.split(":")[0].split("@")[0];
+      if (msg.key?.fromMe) {
+        const isGroupJid = remoteJid.endsWith("@g.us");
+        const isSelfChat = !!botNumber && remoteNumber === botNumber;
+        if (!isSelfChat && !isGroupJid) {
+          logger.info({ jid: remoteJid }, "\u21A9 fromMe DM echo \u2014 skipped");
           continue;
         }
-        const jid = msg.key.remoteJid;
-        logger.info({ jid, jidType: jid?.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "\u27A1\uFE0F Passing to message handler");
-        if (jid === "status@broadcast") {
-          await handleStatusMessage(sock, msg);
-          continue;
+        if (isSelfChat) {
+          logger.info({ jid: remoteJid }, "\u{1F464} Self-chat \u2014 processing as owner command");
         }
-        const proto = msg.message.protocolMessage;
-        if (proto && proto.type === 0 && proto.key?.id) {
-          const deletedMsg = popCachedMessage(proto.key.id);
-          if (deletedMsg && ownerNumber) {
-            const srcJid = deletedMsg.key.remoteJid || "";
+      }
+      const hasMessage = !!msg.message;
+      const hasJid = !!msg.key?.remoteJid;
+      if (!hasMessage || !hasJid) {
+        const stubType = msg.messageStubType ?? 0;
+        if (stubType === 0) {
+          logger.warn(
+            { jid: remoteJid, hasMessage, hasJid, fromMe: msg.key?.fromMe },
+            "\u26A0\uFE0F Decryption failure \u2014 content is null. Re-pair to get fresh session files."
+          );
+        } else {
+          logger.info({ stubType, jid: remoteJid }, "\u21A9 Protocol notification \u2014 skipped");
+        }
+        continue;
+      }
+      const jid = msg.key.remoteJid;
+      logger.info({ jid, jidType: jid.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "\u27A1\uFE0F Dispatching message");
+      if (jid === "status@broadcast") {
+        dispatchAsync("handleStatusMessage", () => handleStatusMessage(sock, msg));
+        continue;
+      }
+      const proto = msg.message.protocolMessage;
+      if (proto && proto.type === 0 && proto.key?.id) {
+        const deletedMsg = popCachedMessage(proto.key.id);
+        if (deletedMsg && ownerNumber) {
+          const capturedDeleted = deletedMsg;
+          dispatchAsync("antidelete", async () => {
+            const srcJid = capturedDeleted.key.remoteJid || "";
             const isGroup = srcJid.endsWith("@g.us");
             const gs = isGroup ? getGroupSettings(srcJid) : null;
             const antiDeleteOn = isGroup ? gs?.antiDelete : true;
-            if (antiDeleteOn) {
-              const ownerJid = `${ownerNumber}@s.whatsapp.net`;
-              const senderNum = (deletedMsg.key.participant || deletedMsg.key.remoteJid || "").split(":")[0].split("@")[0];
-              const where = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
-              const header = `\u{1F5D1} *Deleted message detected*
-\u{1F464} From: ${deletedMsg.pushName || senderNum} (${senderNum})
+            if (!antiDeleteOn) return;
+            const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+            const senderNum = (capturedDeleted.key.participant || capturedDeleted.key.remoteJid || "").split(":")[0].split("@")[0];
+            const where = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
+            const header = `\u{1F5D1} *Deleted message detected*
+\u{1F464} From: ${capturedDeleted.pushName || senderNum} (${senderNum})
 \u{1F4CD} In: ${where}`;
-              const innerMsg = deletedMsg.message;
-              if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
-                const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
-                await sock.sendMessage(ownerJid, { text: `${header}
+            const innerMsg = capturedDeleted.message;
+            if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
+              const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
+              await sock.sendMessage(ownerJid, { text: `${header}
 
 \u{1F4AC} "${text}"` });
-              } else if (innerMsg?.imageMessage) {
-                await sock.sendMessage(ownerJid, { text: header });
-                await sock.sendMessage(ownerJid, {
-                  forward: deletedMsg,
-                  force: true
-                });
-              } else {
-                await sock.sendMessage(ownerJid, { text: `${header}
+            } else if (innerMsg?.imageMessage) {
+              await sock.sendMessage(ownerJid, { text: header });
+              await sock.sendMessage(ownerJid, { forward: capturedDeleted, force: true });
+            } else {
+              await sock.sendMessage(ownerJid, { text: `${header}
 
 \u{1F4CE} (media/unsupported message type)` });
-              }
-              logger.info({ from: senderNum, jid: srcJid }, "\u{1F5D1} Antidelete: forwarded deleted message to owner");
             }
-          }
-          continue;
+            logger.info({ from: senderNum, jid: srcJid }, "\u{1F5D1} Antidelete: forwarded deleted message to owner");
+          });
         }
-        cacheMessage(msg);
-        await handleMessage(sock, msg);
-      } catch (err) {
-        logger.error({ err }, "Error handling message");
+        continue;
       }
+      cacheMessage(msg);
+      dispatchAsync("handleMessage", () => handleMessage(sock, msg));
     }
   });
   sock.ev.on("group-participants.update", async (update) => {
@@ -39482,7 +39489,7 @@ async function startPairingSession(phoneNumber, attempt = 0, skipPairCodeRequest
         await sock.sendMessage(jid, {
           text: `*NUTTER-XMD* is now linked! \u2705
 
-\u23F3 Please wait...`
+\u23F3 Generating your session ID...`
         });
         logger.info({ jid }, "Sent 'linked' notification \u2014 entering key-settling phase");
       } catch (err) {
@@ -39552,6 +39559,12 @@ async function startPairingSession(phoneNumber, attempt = 0, skipPairCodeRequest
         } catch {
         }
         logger.error({ phoneNumber }, "SESSION_ID encoding failed \u2014 user notified");
+      }
+      try {
+        await new Promise((r) => setTimeout(r, 2e3));
+        sock.end(void 0);
+        logger.info("Pairing socket disconnected cleanly after SESSION_ID delivery");
+      } catch {
       }
     }
     if (connection === "close") {
@@ -39659,7 +39672,7 @@ async function startQrSession(attempt = 0) {
           await sock.sendMessage(jid, {
             text: `*NUTTER-XMD* is now linked! \u2705
 
-\u23F3 Please wait...`
+\u23F3 Generating your session ID...`
           });
           logger.info({ jid }, "Sent 'linked' notification \u2014 entering key-settling phase");
         } catch (err) {
@@ -39732,6 +39745,12 @@ async function startQrSession(attempt = 0) {
           }
           logger.error({ phoneNum }, "SESSION_ID encoding failed \u2014 user notified");
         }
+      }
+      try {
+        await new Promise((r) => setTimeout(r, 2e3));
+        sock.end(void 0);
+        logger.info("Pairing socket disconnected cleanly after SESSION_ID delivery");
+      } catch {
       }
     }
     if (connection === "close") {
