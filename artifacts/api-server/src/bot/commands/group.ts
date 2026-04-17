@@ -1,22 +1,7 @@
 import type { WASocket, proto } from "@whiskeysockets/baileys";
 import type { CommandContext } from "../handler";
-import { db } from "@workspace/db";
-import { groupSettingsTable, userSettingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { ensureGroupSettings, updateGroupSettings, setUserBanned } from "../store";
 import { logger } from "../../lib/logger";
-
-async function ensureGroupSettings(groupId: string) {
-  const existing = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, groupId)).limit(1);
-  if (existing.length > 0) return existing[0];
-  const [created] = await db.insert(groupSettingsTable).values({ groupId }).returning();
-  return created;
-}
-
-async function updateGroupSetting(groupId: string, update: Partial<typeof groupSettingsTable.$inferInsert>) {
-  await db.update(groupSettingsTable)
-    .set({ ...update, updatedAt: new Date() })
-    .where(eq(groupSettingsTable.groupId, groupId));
-}
 
 export async function handleKick(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
   if (!ctx.isBotGroupAdmin) {
@@ -112,8 +97,7 @@ export async function handleAntilink(sock: WASocket, _msg: proto.IWebMessageInfo
     return;
   }
   const state = raw === "on";
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { antilink: state });
+  updateGroupSettings(ctx.jid, { antilink: state });
   await sock.sendMessage(ctx.jid, { text: `Antilink is now ${state ? "ON" : "OFF"}.` });
 }
 
@@ -128,8 +112,7 @@ export async function handleAntibadword(sock: WASocket, _msg: proto.IWebMessageI
     return;
   }
   const state = raw === "on";
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { antibadword: state });
+  updateGroupSettings(ctx.jid, { antibadword: state });
   await sock.sendMessage(ctx.jid, { text: `Antibadword is now ${state ? "ON" : "OFF"}.` });
 }
 
@@ -144,8 +127,7 @@ export async function handleAntimention(sock: WASocket, _msg: proto.IWebMessageI
     return;
   }
   const state = raw === "on";
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { antimention: state });
+  updateGroupSettings(ctx.jid, { antimention: state });
   await sock.sendMessage(ctx.jid, { text: `Antimention is now ${state ? "ON" : "OFF"}.` });
 }
 
@@ -159,10 +141,8 @@ export async function handleBan(sock: WASocket, msg: proto.IWebMessageInfo, ctx:
     await sock.sendMessage(ctx.jid, { text: "Tag a user: .ban @user" });
     return;
   }
-
   for (const userId of mentioned) {
-    await db.insert(userSettingsTable).values({ userId, isBanned: true })
-      .onConflictDoUpdate({ target: userSettingsTable.userId, set: { isBanned: true, updatedAt: new Date() } });
+    setUserBanned(userId, true);
   }
   await sock.sendMessage(ctx.jid, { text: `Banned ${mentioned.length} user(s).` });
 }
@@ -177,9 +157,8 @@ export async function handleUnban(sock: WASocket, msg: proto.IWebMessageInfo, ct
     await sock.sendMessage(ctx.jid, { text: "Tag a user: .unban @user" });
     return;
   }
-
   for (const userId of mentioned) {
-    await db.update(userSettingsTable).set({ isBanned: false, updatedAt: new Date() }).where(eq(userSettingsTable.userId, userId));
+    setUserBanned(userId, false);
   }
   await sock.sendMessage(ctx.jid, { text: `Unbanned ${mentioned.length} user(s).` });
 }
@@ -198,8 +177,7 @@ export async function handleSetPrefix(sock: WASocket, _msg: proto.IWebMessageInf
     await sock.sendMessage(ctx.jid, { text: "Provide a prefix (1–5 chars): .setprefix !" });
     return;
   }
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { customPrefix: newPrefix });
+  updateGroupSettings(ctx.jid, { customPrefix: newPrefix });
   await sock.sendMessage(ctx.jid, { text: `Prefix changed to: ${newPrefix}` });
 }
 
@@ -272,8 +250,7 @@ export async function handleMute(sock: WASocket, _msg: proto.IWebMessageInfo, ct
   }
   try {
     await sock.groupSettingUpdate(ctx.jid, "announcement");
-    await ensureGroupSettings(ctx.jid);
-    await updateGroupSetting(ctx.jid, { mute: true });
+    updateGroupSettings(ctx.jid, { mute: true });
     await sock.sendMessage(ctx.jid, { text: "🔇 Group muted. Only admins can send messages." });
   } catch (err) {
     logger.error({ err }, "Failed to mute group");
@@ -292,8 +269,7 @@ export async function handleUnmute(sock: WASocket, _msg: proto.IWebMessageInfo, 
   }
   try {
     await sock.groupSettingUpdate(ctx.jid, "not_announcement");
-    await ensureGroupSettings(ctx.jid);
-    await updateGroupSetting(ctx.jid, { mute: false });
+    updateGroupSettings(ctx.jid, { mute: false });
     await sock.sendMessage(ctx.jid, { text: "🔊 Group unmuted. All members can send messages." });
   } catch (err) {
     logger.error({ err }, "Failed to unmute group");
@@ -316,8 +292,7 @@ export async function handleWelcome(sock: WASocket, _msg: proto.IWebMessageInfo,
     return;
   }
   const state = raw === "on";
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { welcomeEnabled: state });
+  updateGroupSettings(ctx.jid, { welcomeEnabled: state });
   await sock.sendMessage(ctx.jid, {
     text: `Welcome messages are now ${state ? "ON" : "OFF"}.${state ? `\n\nUse ${ctx.prefix}setwelcome <message> to set a custom message. Use {name} as placeholder for the new member's name.` : ""}`,
   });
@@ -337,8 +312,7 @@ export async function handleSetWelcome(sock: WASocket, _msg: proto.IWebMessageIn
     await sock.sendMessage(ctx.jid, { text: `Usage: ${ctx.prefix}setwelcome Welcome to the group, {name}! 🎉` });
     return;
   }
-  await ensureGroupSettings(ctx.jid);
-  await updateGroupSetting(ctx.jid, { welcomeMessage: message });
+  updateGroupSettings(ctx.jid, { welcomeMessage: message });
   await sock.sendMessage(ctx.jid, { text: `Welcome message set:\n\n${message}` });
 }
 
@@ -353,8 +327,7 @@ export async function handleAutoReply(sock: WASocket, _msg: proto.IWebMessageInf
   }
 
   const subCmd = args[0]?.toLowerCase();
-
-  const settings = await ensureGroupSettings(ctx.jid);
+  const settings = ensureGroupSettings(ctx.jid);
   let autoReplyMap: Record<string, string> = {};
   try {
     if (settings?.autoReply) autoReplyMap = JSON.parse(settings.autoReply);
@@ -387,7 +360,7 @@ export async function handleAutoReply(sock: WASocket, _msg: proto.IWebMessageInf
       return;
     }
     autoReplyMap[trigger] = response;
-    await updateGroupSetting(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
+    updateGroupSettings(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
     await sock.sendMessage(ctx.jid, { text: `Auto-reply added:\n*${trigger}* → ${response}` });
     return;
   }
@@ -403,7 +376,7 @@ export async function handleAutoReply(sock: WASocket, _msg: proto.IWebMessageInf
       return;
     }
     delete autoReplyMap[trigger];
-    await updateGroupSetting(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
+    updateGroupSettings(ctx.jid, { autoReply: JSON.stringify(autoReplyMap) });
     await sock.sendMessage(ctx.jid, { text: `Auto-reply removed: ${trigger}` });
     return;
   }

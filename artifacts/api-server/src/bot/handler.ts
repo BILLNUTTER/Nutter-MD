@@ -1,8 +1,6 @@
 import type { WASocket, WAMessageKey, proto } from "@whiskeysockets/baileys";
-import { db } from "@workspace/db";
-import { groupSettingsTable, userSettingsTable } from "@workspace/db/schema";
-import type { GroupSettings } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import type { GroupSettings } from "./store";
+import { getGroupSettings, getUserSettings } from "./store";
 import { logger } from "../lib/logger";
 import {
   handlePing,
@@ -59,7 +57,6 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const senderNumber = senderJid.split("@")[0];
   const isOwner = senderNumber === ownerNumber;
 
-  // Private mode: only the owner can trigger any bot response
   const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
   if (botMode === "private" && !isOwner) return;
 
@@ -79,8 +76,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
 
   if (isGroup) {
     try {
-      const rows = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, jid)).limit(1);
-      groupSettings = rows[0] ?? null;
+      groupSettings = getGroupSettings(jid);
 
       if (groupSettings?.customPrefix) {
         prefix = groupSettings.customPrefix;
@@ -136,20 +132,16 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
           await sock.sendMessage(jid, { text: matched[1] });
         }
       } catch {
-        // Non-fatal: skip auto-reply if parsing fails
+        // skip auto-reply if parsing fails
       }
     }
     return;
   }
 
-  try {
-    const [banned] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.userId, senderJid)).limit(1);
-    if (banned?.isBanned && !isOwner) {
-      await sock.sendMessage(jid, { text: "You are banned from using this bot." });
-      return;
-    }
-  } catch (_err) {
-    // Non-fatal: continue if DB check fails
+  const userSettings = getUserSettings(senderJid);
+  if (userSettings?.isBanned && !isOwner) {
+    await sock.sendMessage(jid, { text: "You are banned from using this bot." });
+    return;
   }
 
   const ctx: CommandContext = { jid, isOwner, isSenderGroupAdmin, isBotGroupAdmin, groupSettings, prefix };
@@ -197,8 +189,7 @@ export async function handleGroupParticipantsUpdate(
 
   const groupId = update.id;
   try {
-    const rows = await db.select().from(groupSettingsTable).where(eq(groupSettingsTable.groupId, groupId)).limit(1);
-    const settings = rows[0] ?? null;
+    const settings = getGroupSettings(groupId);
     if (!settings?.welcomeEnabled) return;
 
     const groupMeta = await sock.groupMetadata(groupId);
