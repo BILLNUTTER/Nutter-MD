@@ -163,6 +163,17 @@ async function connectBot(sessionAuth: {
         logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
       }
 
+      // Announce presence so WhatsApp knows the bot is online.
+      // This triggers the server to flush any pending sender-key exchanges,
+      // which reduces the first-message delay for contacts who already tried
+      // to reach the bot while it was restarting.
+      try {
+        await sock.sendPresenceUpdate("available");
+        logger.info("✅ Presence set to available");
+      } catch (err) {
+        logger.warn({ err }, "Presence update skipped (non-fatal)");
+      }
+
       // Pre-populate group metadata cache so the FIRST message from any group
       // is a cache hit (no API call). This is the same thing RAVEN-BOT's
       // makeInMemoryStore achieves via store.bind(client.ev) + groups.upsert.

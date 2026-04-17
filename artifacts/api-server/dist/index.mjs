@@ -28490,9 +28490,26 @@ async function encodeSessionToBase64(fileMap) {
     sessionRawBytes += size;
   }
   const sessionCount = Object.keys(toEncode).filter((f) => f.startsWith("session-")).length;
+  if (fileMap["sender-key-memory.json"]) {
+    toEncode["sender-key-memory.json"] = fileMap["sender-key-memory.json"];
+  }
+  let senderKeyRawBytes = 0;
+  const senderKeyFiles = Object.keys(fileMap).filter((f) => f.startsWith("sender-key-") && f.endsWith(".json") && f !== "sender-key-memory.json").sort();
+  for (const f of senderKeyFiles) {
+    const size = JSON.stringify(fileMap[f]).length;
+    if (senderKeyRawBytes + size > SENDER_KEY_RAW_BUDGET) break;
+    toEncode[f] = fileMap[f];
+    senderKeyRawBytes += size;
+  }
+  const senderKeyCount = Object.keys(toEncode).filter((f) => f.startsWith("sender-key-")).length;
   logger.info(
-    { totalFiles: Object.keys(toEncode).length, preKeys: preKeyFiles.length, sessions: sessionCount },
-    "Encoding session (creds + pre-keys + sessions)"
+    {
+      totalFiles: Object.keys(toEncode).length,
+      preKeys: preKeyFiles.length,
+      sessions: sessionCount,
+      senderKeys: senderKeyCount
+    },
+    "Encoding session (creds + pre-keys + sessions + sender-keys)"
   );
   const json = Buffer.from(JSON.stringify(toEncode), "utf-8");
   const compressed = await gzip(json);
@@ -28511,7 +28528,7 @@ async function encodeSessionToBase64(fileMap) {
   }
   return encoded;
 }
-var gzip, gunzip, SESSION_PREFIX, MAX_PREKEYS, SESSION_RAW_BUDGET;
+var gzip, gunzip, SESSION_PREFIX, MAX_PREKEYS, SESSION_RAW_BUDGET, SENDER_KEY_RAW_BUDGET;
 var init_session = __esm({
   "src/bot/session.ts"() {
     "use strict";
@@ -28521,6 +28538,7 @@ var init_session = __esm({
     SESSION_PREFIX = "NUTTERX-MD::;";
     MAX_PREKEYS = 50;
     SESSION_RAW_BUDGET = 15e4;
+    SENDER_KEY_RAW_BUDGET = 12e4;
   }
 });
 
@@ -34977,6 +34995,12 @@ async function connectBot(sessionAuth) {
         logger.info("\u2705 Pre-keys uploaded to WhatsApp server");
       } catch (err) {
         logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
+      }
+      try {
+        await sock.sendPresenceUpdate("available");
+        logger.info("\u2705 Presence set to available");
+      } catch (err) {
+        logger.warn({ err }, "Presence update skipped (non-fatal)");
       }
       try {
         const allGroups = await sock.groupFetchAllParticipating();

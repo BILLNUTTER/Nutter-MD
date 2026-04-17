@@ -69,33 +69,42 @@ export async function loadSessionFromEnv(): Promise<{
   }
 }
 
-// SESSION_ID encoding strategy — creds + pre-keys + P2P sessions:
+// SESSION_ID encoding strategy — creds + pre-keys + P2P sessions + sender keys:
 //
-//   creds.json        — always required (identity / reconnection keys)
+//   creds.json             — always required (identity / reconnection keys)
 //
-//   pre-key-*.json    — REQUIRED for new contacts.
+//   pre-key-*.json         — REQUIRED for new contacts.
 //     WA server gives a contact one of our pre-keys when they first message us.
 //     Without the private key on disk, Baileys fails silently (ACKs the message,
 //     never retries). Keeping up to MAX_PREKEYS newest keys covers all active ones.
 //
-//   session-*.json    — REQUIRED for fast responses from existing contacts.
+//   session-*.json         — REQUIRED for fast DM decryption.
 //     These are the P2P Signal ratchet states (~1-2 KB each). Without them,
 //     every contact's FIRST message after each redeploy fails to decrypt and
-//     triggers a 30-60 s retry round-trip before the bot can reply.
-//     We include all session files up to SESSION_RAW_BUDGET bytes (raw JSON),
-//     which comfortably covers 100+ active contacts well within Heroku's limits.
+//     triggers a 30-120 s retry round-trip before the bot can reply.
 //
-//   NOT included: sender-key-* (group keys, re-exchanged on reconnect)
-//                 app-state-sync-* (not needed for message decryption)
+//   sender-key-*.json      — CRITICAL: without these ALL group messages are delayed
+//   sender-key-memory.json   2 minutes every redeploy. WhatsApp uses sender keys
+//                            (not P2P sessions) for group encryption. If the key
+//                            is missing, WA holds the message and retries after
+//                            ~60-120 s once a fresh key is exchanged. Including
+//                            these files makes group commands instant.
 //
-//   SIZE: creds (~1 KB) + 30 pre-keys (~9 KB) + 50 sessions (~75 KB) raw
-//         → ~15-20 KB gzip → well under Heroku's 64 KB config var limit.
+//   NOT included: app-state-sync-* (chat history sync, not needed for decryption)
+//
+//   SIZE budget (raw JSON → gzip → base64, must stay under Heroku 64 KB limit):
+//     creds (~1 KB) + 50 pre-keys (~15 KB) + 150 KB sessions + 120 KB sender-keys
+//     → combined raw ~290 KB → gzip ~50-55 KB → base64 ~72 KB.
+//     The 60 000 char warning fires if approaching that limit; trim budgets if hit.
 const MAX_PREKEYS = 50;
 
 // Budget for session-*.json files (raw JSON bytes).
-// session-*.json hold P2P Signal sessions (~1-2 KB each).
-// 150 KB raw → ~30 KB gzip → still well under Heroku's 32 KB per-var limit.
 const SESSION_RAW_BUDGET = 150_000;
+
+// Budget for sender-key-*.json files (raw JSON bytes).
+// sender-key files are ~0.5-2 KB each; 120 KB raw covers 60-240 active senders.
+// Combined with sessions this gzips to ~50 KB — safely under the 64 KB limit.
+const SENDER_KEY_RAW_BUDGET = 120_000;
 
 export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<string> {
   const toEncode: SessionFileMap = {};
@@ -140,9 +149,35 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
 
   const sessionCount = Object.keys(toEncode).filter((f) => f.startsWith("session-")).length;
 
+  // ── Sender-key files: prevent 2-minute group message delays ─────────────────
+  // sender-key-memory.json is the index file Baileys reads first — include it
+  // unconditionally (it is small, usually <5 KB).
+  if (fileMap["sender-key-memory.json"]) {
+    toEncode["sender-key-memory.json"] = fileMap["sender-key-memory.json"];
+  }
+
+  let senderKeyRawBytes = 0;
+  const senderKeyFiles = Object.keys(fileMap)
+    .filter((f) => f.startsWith("sender-key-") && f.endsWith(".json") && f !== "sender-key-memory.json")
+    .sort();
+
+  for (const f of senderKeyFiles) {
+    const size = JSON.stringify(fileMap[f]).length;
+    if (senderKeyRawBytes + size > SENDER_KEY_RAW_BUDGET) break;
+    toEncode[f] = fileMap[f];
+    senderKeyRawBytes += size;
+  }
+
+  const senderKeyCount = Object.keys(toEncode).filter((f) => f.startsWith("sender-key-")).length;
+
   logger.info(
-    { totalFiles: Object.keys(toEncode).length, preKeys: preKeyFiles.length, sessions: sessionCount },
-    "Encoding session (creds + pre-keys + sessions)"
+    {
+      totalFiles: Object.keys(toEncode).length,
+      preKeys: preKeyFiles.length,
+      sessions: sessionCount,
+      senderKeys: senderKeyCount,
+    },
+    "Encoding session (creds + pre-keys + sessions + sender-keys)"
   );
 
   const json       = Buffer.from(JSON.stringify(toEncode), "utf-8");

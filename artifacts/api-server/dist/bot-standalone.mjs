@@ -6320,6 +6320,12 @@ async function connectBot(sessionAuth) {
         logger.warn({ err }, "Pre-key upload skipped (non-fatal)");
       }
       try {
+        await sock.sendPresenceUpdate("available");
+        logger.info("\u2705 Presence set to available");
+      } catch (err) {
+        logger.warn({ err }, "Presence update skipped (non-fatal)");
+      }
+      try {
         const allGroups = await sock.groupFetchAllParticipating();
         const count = populateGroupMetaCache(
           allGroups
