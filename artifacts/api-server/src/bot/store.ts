@@ -2,6 +2,7 @@ export interface GroupSettings {
   groupId: string;
   antilink: boolean;
   antibadword: boolean;
+  customBadWords: string | null;
   antimention: boolean;
   mute: boolean;
   customPrefix: string | null;
@@ -32,9 +33,10 @@ export function ensureGroupSettings(groupId: string): GroupSettings {
   if (!groupStore.has(groupId)) {
     groupStore.set(groupId, {
       groupId,
-      antilink:    process.env["ANTI_LINK"]     === "true",
-      antibadword: process.env["ANTI_BAD_WORD"] === "true",
-      antimention: process.env["ANTI_MENTION"]  === "true",
+      antilink:      process.env["ANTI_LINK"]     === "true",
+      antibadword:   process.env["ANTI_BAD_WORD"] === "true",
+      customBadWords: null,
+      antimention:   process.env["ANTI_MENTION"]  === "true",
       mute: false,
       customPrefix: null,
       welcomeEnabled: false,

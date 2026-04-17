@@ -116,6 +116,43 @@ export async function handleAntibadword(sock: WASocket, _msg: proto.IWebMessageI
   await sock.sendMessage(ctx.jid, { text: `Antibadword is now ${state ? "ON" : "OFF"}.` });
 }
 
+export async function handleSetBadWords(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "🚫 Group admins only" });
+    return;
+  }
+  if (!ctx.isGroup) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in a group." });
+    return;
+  }
+  if (args[0]?.toLowerCase() === "reset") {
+    updateGroupSettings(ctx.jid, { customBadWords: null });
+    await sock.sendMessage(ctx.jid, { text: "✅ Bad words list reset to default." });
+    return;
+  }
+  if (args[0]?.toLowerCase() === "list") {
+    const gs = ensureGroupSettings(ctx.jid);
+    const list = gs.customBadWords
+      ? gs.customBadWords.split(",").map((w) => w.trim()).join(", ")
+      : "Using default list";
+    await sock.sendMessage(ctx.jid, { text: `*Bad Words List:*\n${list}` });
+    return;
+  }
+  if (!args.length) {
+    await sock.sendMessage(ctx.jid, {
+      text:
+        `Usage:\n` +
+        `.setbadwords <word1, word2, word3> — Set custom bad words\n` +
+        `.setbadwords list — Show current list\n` +
+        `.setbadwords reset — Restore default list`,
+    });
+    return;
+  }
+  const words = args.join(" ").split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
+  updateGroupSettings(ctx.jid, { customBadWords: words.join(",") });
+  await sock.sendMessage(ctx.jid, { text: `✅ Bad words list updated:\n${words.join(", ")}` });
+}
+
 export async function handleAntimention(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
   if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(ctx.jid, { text: "🚫 Group admins only" });

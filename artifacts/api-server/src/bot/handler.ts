@@ -29,9 +29,10 @@ import {
   handleWelcome,
   handleSetWelcome,
   handleAutoReply,
+  handleSetBadWords,
 } from "./commands/group";
 
-const BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
+const DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
 const URL_REGEX = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|t\.me\/[^\s]+/i;
 
 export interface CommandContext {
@@ -137,7 +138,10 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
           await sock.sendMessage(jid, { text: "Links are not allowed in this group." });
           return;
         }
-        if (groupSettings.antibadword && !isOwner && BAD_WORDS.some((w) => body.toLowerCase().includes(w))) {
+        const badWordList = groupSettings.customBadWords
+          ? groupSettings.customBadWords.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean)
+          : DEFAULT_BAD_WORDS;
+        if (groupSettings.antibadword && !isOwner && badWordList.some((w) => body.toLowerCase().includes(w))) {
           await sock.sendMessage(jid, { delete: msgKey });
           await sock.sendMessage(jid, { text: "Bad language is not allowed." });
           return;
@@ -245,6 +249,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     case "demote":        return handleDemote(sock, msg, ctx);
     case "antilink":      return handleAntilink(sock, msg, ctx, args);
     case "antibadword":   return handleAntibadword(sock, msg, ctx, args);
+    case "setbadwords":   return handleSetBadWords(sock, msg, ctx, args);
     case "antimention":   return handleAntimention(sock, msg, ctx, args);
     case "ban":           return handleBan(sock, msg, ctx);
     case "unban":         return handleUnban(sock, msg, ctx);

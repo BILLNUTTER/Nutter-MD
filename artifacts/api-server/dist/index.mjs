@@ -33040,6 +33040,7 @@ function ensureGroupSettings(groupId) {
       groupId,
       antilink: process.env["ANTI_LINK"] === "true",
       antibadword: process.env["ANTI_BAD_WORD"] === "true",
+      customBadWords: null,
       antimention: process.env["ANTI_MENTION"] === "true",
       mute: false,
       customPrefix: null,
@@ -33130,6 +33131,9 @@ ${prefix}mute \u2014 Mute group (admins only can chat)
 ${prefix}unmute \u2014 Unmute group
 ${prefix}antilink on/off \u2014 Block links
 ${prefix}antibadword on/off \u2014 Block bad words
+${prefix}setbadwords <w1,w2> \u2014 Set custom bad words list
+${prefix}setbadwords list \u2014 Show current bad words
+${prefix}setbadwords reset \u2014 Restore default list
 ${prefix}antimention on/off \u2014 Block mass mentions
 ${prefix}ban @user \u2014 Ban user from bot
 ${prefix}unban @user \u2014 Unban user
@@ -33403,6 +33407,41 @@ async function handleAntibadword(sock, _msg, ctx, args) {
   const state = raw === "on";
   updateGroupSettings(ctx.jid, { antibadword: state });
   await sock.sendMessage(ctx.jid, { text: `Antibadword is now ${state ? "ON" : "OFF"}.` });
+}
+async function handleSetBadWords(sock, _msg, ctx, args) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "\u{1F6AB} Group admins only" });
+    return;
+  }
+  if (!ctx.isGroup) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in a group." });
+    return;
+  }
+  if (args[0]?.toLowerCase() === "reset") {
+    updateGroupSettings(ctx.jid, { customBadWords: null });
+    await sock.sendMessage(ctx.jid, { text: "\u2705 Bad words list reset to default." });
+    return;
+  }
+  if (args[0]?.toLowerCase() === "list") {
+    const gs = ensureGroupSettings(ctx.jid);
+    const list = gs.customBadWords ? gs.customBadWords.split(",").map((w) => w.trim()).join(", ") : "Using default list";
+    await sock.sendMessage(ctx.jid, { text: `*Bad Words List:*
+${list}` });
+    return;
+  }
+  if (!args.length) {
+    await sock.sendMessage(ctx.jid, {
+      text: `Usage:
+.setbadwords <word1, word2, word3> \u2014 Set custom bad words
+.setbadwords list \u2014 Show current list
+.setbadwords reset \u2014 Restore default list`
+    });
+    return;
+  }
+  const words = args.join(" ").split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
+  updateGroupSettings(ctx.jid, { customBadWords: words.join(",") });
+  await sock.sendMessage(ctx.jid, { text: `\u2705 Bad words list updated:
+${words.join(", ")}` });
 }
 async function handleAntimention(sock, _msg, ctx, args) {
   if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
@@ -33737,7 +33776,8 @@ async function handleMessage(sock, msg) {
           await sock.sendMessage(jid, { text: "Links are not allowed in this group." });
           return;
         }
-        if (groupSettings.antibadword && !isOwner && BAD_WORDS.some((w) => body.toLowerCase().includes(w))) {
+        const badWordList = groupSettings.customBadWords ? groupSettings.customBadWords.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean) : DEFAULT_BAD_WORDS;
+        if (groupSettings.antibadword && !isOwner && badWordList.some((w) => body.toLowerCase().includes(w))) {
           await sock.sendMessage(jid, { delete: msgKey });
           await sock.sendMessage(jid, { text: "Bad language is not allowed." });
           return;
@@ -33860,6 +33900,8 @@ Usage: ${prefix}statusemoji \u2764\uFE0F,\u{1F525},\u{1F60D}` });
       return handleAntilink(sock, msg, ctx, args);
     case "antibadword":
       return handleAntibadword(sock, msg, ctx, args);
+    case "setbadwords":
+      return handleSetBadWords(sock, msg, ctx, args);
     case "antimention":
       return handleAntimention(sock, msg, ctx, args);
     case "ban":
@@ -33908,7 +33950,7 @@ async function handleGroupParticipantsUpdate(sock, update) {
     logger.warn({ err, groupId }, "Failed to send welcome message");
   }
 }
-var BAD_WORDS, URL_REGEX;
+var DEFAULT_BAD_WORDS, URL_REGEX;
 var init_handler = __esm({
   "src/bot/handler.ts"() {
     "use strict";
@@ -33916,7 +33958,7 @@ var init_handler = __esm({
     init_logger();
     init_general();
     init_group();
-    BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
+    DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
     URL_REGEX = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|t\.me\/[^\s]+/i;
   }
 });
