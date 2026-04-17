@@ -1,9 +1,12 @@
+import type { proto } from "@whiskeysockets/baileys";
+
 export interface GroupSettings {
   groupId: string;
   antilink: boolean;
   antibadword: "off" | "delete" | "kick";
   customBadWords: string | null;
   antimention: boolean;
+  antiDelete: boolean;
   mute: boolean;
   customPrefix: string | null;
   welcomeEnabled: boolean;
@@ -37,6 +40,7 @@ export function ensureGroupSettings(groupId: string): GroupSettings {
       antibadword:   (process.env["ANTI_BAD_WORD"] === "true" ? "delete" : "off") as "off" | "delete" | "kick",
       customBadWords: null,
       antimention:   process.env["ANTI_MENTION"]  === "true",
+      antiDelete: false,
       mute: false,
       customPrefix: null,
       welcomeEnabled: false,
@@ -76,4 +80,31 @@ export function getBotSettings(): BotSettings {
 
 export function updateBotSettings(update: Partial<BotSettings>): void {
   Object.assign(botSettings, update);
+}
+
+// ── Volatile in-memory message cache (for antidelete) ─────────────────────────
+// Messages expire automatically after 5 minutes. No database, no file storage.
+const MSG_TTL = 5 * 60 * 1000;   // 5 minutes
+const MSG_MAX = 2000;              // cap to prevent unbounded growth
+
+interface CacheEntry { msg: proto.IWebMessageInfo; expireAt: number }
+const msgCache = new Map<string, CacheEntry>();
+
+export function cacheMessage(msg: proto.IWebMessageInfo): void {
+  const id = msg.key.id;
+  if (!id || msg.key.fromMe) return;   // don't cache own outgoing messages
+  if (msgCache.size >= MSG_MAX) {
+    const now = Date.now();
+    for (const [k, v] of msgCache) {
+      if (v.expireAt < now) msgCache.delete(k);
+    }
+  }
+  msgCache.set(id, { msg, expireAt: Date.now() + MSG_TTL });
+}
+
+export function popCachedMessage(id: string): proto.IWebMessageInfo | null {
+  const entry = msgCache.get(id);
+  if (!entry) return null;
+  msgCache.delete(id);
+  return entry.expireAt >= Date.now() ? entry.msg : null;
 }

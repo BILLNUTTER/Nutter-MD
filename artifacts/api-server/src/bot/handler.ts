@@ -30,6 +30,7 @@ import {
   handleSetWelcome,
   handleAutoReply,
   handleSetBadWords,
+  handleAntiDelete,
 } from "./commands/group";
 
 const DEFAULT_BAD_WORDS = ["fuck", "shit", "bitch", "asshole", "nigga", "faggot", "cunt"];
@@ -308,6 +309,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     case "antibadword":   return handleAntibadword(sock, msg, ctx, args);
     case "setbadwords":   return handleSetBadWords(sock, msg, ctx, args);
     case "antimention":   return handleAntimention(sock, msg, ctx, args);
+    case "antidelete":    return handleAntiDelete(sock, msg, ctx, args);
     case "ban":           return handleBan(sock, msg, ctx);
     case "unban":         return handleUnban(sock, msg, ctx);
     case "setprefix":     return handleSetPrefix(sock, msg, ctx, args);

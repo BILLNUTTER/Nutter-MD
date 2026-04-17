@@ -49,6 +49,7 @@ export async function handleMenu(sock: WASocket, _msg: proto.IWebMessageInfo, ct
     `${prefix}setbadwords list — Show current bad words\n` +
     `${prefix}setbadwords reset — Restore default list\n` +
     `${prefix}antimention on/off — Block mass mentions\n` +
+    `${prefix}antidelete on/off — Forward deleted msgs to owner DM\n` +
     `${prefix}ban @user — Ban user from bot\n` +
     `${prefix}unban @user — Unban user\n` +
     `${prefix}setprefix <char> — Change command prefix\n\n` +

@@ -3,6 +3,7 @@ import { Boom } from "@hapi/boom";
 import { logger } from "../lib/logger";
 import { loadSessionFromEnv } from "./session";
 import { handleMessage, handleStatusMessage, handleGroupParticipantsUpdate } from "./handler";
+import { cacheMessage, popCachedMessage, getGroupSettings } from "./store";
 import type { WASocket } from "@whiskeysockets/baileys";
 
 const MAX_RECONNECTS = 2;
@@ -155,6 +156,8 @@ async function connectBot(sessionAuth: {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
+    const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/\D/g, "");
+
     for (const msg of messages) {
       try {
         if (!msg.message || !msg.key.remoteJid) continue;
@@ -166,6 +169,49 @@ async function connectBot(sessionAuth: {
           await handleStatusMessage(sock, msg);
           continue;
         }
+
+        // ── Antidelete: detect revoke protocol messages ───────────────────────
+        // type 0 = REVOKE ("delete for everyone")
+        const proto = msg.message.protocolMessage;
+        if (proto && proto.type === 0 && proto.key?.id) {
+          const deletedMsg = popCachedMessage(proto.key.id);
+          if (deletedMsg && ownerNumber) {
+            const srcJid = deletedMsg.key.remoteJid || "";
+            const isGroup = srcJid.endsWith("@g.us");
+
+            // Check antidelete setting for this chat
+            const gs = isGroup ? getGroupSettings(srcJid) : null;
+            const antiDeleteOn = isGroup ? gs?.antiDelete : true; // DMs: always forward to owner
+
+            if (antiDeleteOn) {
+              const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+              const senderNum = (deletedMsg.key.participant || deletedMsg.key.remoteJid || "")
+                .split(":")[0].split("@")[0];
+              const where = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
+              const header = `🗑 *Deleted message detected*\n👤 From: ${deletedMsg.pushName || senderNum} (${senderNum})\n📍 In: ${where}`;
+
+              // Forward the original message content
+              const innerMsg = deletedMsg.message;
+              if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
+                const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
+                await sock.sendMessage(ownerJid, { text: `${header}\n\n💬 "${text}"` });
+              } else if (innerMsg?.imageMessage) {
+                await sock.sendMessage(ownerJid, { text: header });
+                await sock.sendMessage(ownerJid, {
+                  forward: deletedMsg,
+                  force: true,
+                } as Parameters<typeof sock.sendMessage>[1]);
+              } else {
+                await sock.sendMessage(ownerJid, { text: `${header}\n\n📎 (media/unsupported message type)` });
+              }
+              logger.info({ from: senderNum, jid: srcJid }, "🗑 Antidelete: forwarded deleted message to owner");
+            }
+          }
+          continue; // REVOKE messages don't need further handling
+        }
+
+        // Cache real messages for antidelete lookup
+        cacheMessage(msg);
 
         await handleMessage(sock, msg);
       } catch (err) {

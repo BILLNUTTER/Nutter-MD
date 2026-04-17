@@ -33023,10 +33023,12 @@ var require_lib4 = __commonJS({
 // src/bot/store.ts
 var store_exports = {};
 __export(store_exports, {
+  cacheMessage: () => cacheMessage,
   ensureGroupSettings: () => ensureGroupSettings,
   getBotSettings: () => getBotSettings,
   getGroupSettings: () => getGroupSettings,
   getUserSettings: () => getUserSettings,
+  popCachedMessage: () => popCachedMessage,
   setUserBanned: () => setUserBanned,
   updateBotSettings: () => updateBotSettings,
   updateGroupSettings: () => updateGroupSettings
@@ -33042,6 +33044,7 @@ function ensureGroupSettings(groupId) {
       antibadword: process.env["ANTI_BAD_WORD"] === "true" ? "delete" : "off",
       customBadWords: null,
       antimention: process.env["ANTI_MENTION"] === "true",
+      antiDelete: false,
       mute: false,
       customPrefix: null,
       welcomeEnabled: false,
@@ -33067,7 +33070,24 @@ function getBotSettings() {
 function updateBotSettings(update) {
   Object.assign(botSettings, update);
 }
-var groupStore, userStore, botSettings;
+function cacheMessage(msg) {
+  const id = msg.key.id;
+  if (!id || msg.key.fromMe) return;
+  if (msgCache.size >= MSG_MAX) {
+    const now = Date.now();
+    for (const [k, v] of msgCache) {
+      if (v.expireAt < now) msgCache.delete(k);
+    }
+  }
+  msgCache.set(id, { msg, expireAt: Date.now() + MSG_TTL });
+}
+function popCachedMessage(id) {
+  const entry = msgCache.get(id);
+  if (!entry) return null;
+  msgCache.delete(id);
+  return entry.expireAt >= Date.now() ? entry.msg : null;
+}
+var groupStore, userStore, botSettings, MSG_TTL, MSG_MAX, msgCache;
 var init_store = __esm({
   "src/bot/store.ts"() {
     "use strict";
@@ -33078,6 +33098,9 @@ var init_store = __esm({
       autoLikeStatus: process.env["AUTO_LIKE_STATUS"] === "true",
       statusLikeEmoji: process.env["STATUS_LIKE_EMOJI"] || "\u2764\uFE0F"
     };
+    MSG_TTL = 5 * 60 * 1e3;
+    MSG_MAX = 2e3;
+    msgCache = /* @__PURE__ */ new Map();
   }
 });
 
@@ -33135,6 +33158,7 @@ ${prefix}setbadwords <w1,w2> \u2014 Set custom bad words list
 ${prefix}setbadwords list \u2014 Show current bad words
 ${prefix}setbadwords reset \u2014 Restore default list
 ${prefix}antimention on/off \u2014 Block mass mentions
+${prefix}antidelete on/off \u2014 Forward deleted msgs to owner DM
 ${prefix}ban @user \u2014 Ban user from bot
 ${prefix}unban @user \u2014 Unban user
 ${prefix}setprefix <char> \u2014 Change command prefix
@@ -33454,6 +33478,26 @@ ${list}` });
   updateGroupSettings(ctx.jid, { customBadWords: words.join(",") });
   await sock.sendMessage(ctx.jid, { text: `\u2705 Bad words list updated:
 ${words.join(", ")}` });
+}
+async function handleAntiDelete(sock, _msg, ctx, args) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "\u{1F6AB} Group admins only" });
+    return;
+  }
+  if (!ctx.isGroup) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in a group." });
+    return;
+  }
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    const current = ensureGroupSettings(ctx.jid).antiDelete;
+    await sock.sendMessage(ctx.jid, { text: `Usage: .antidelete on | .antidelete off
+Current: ${current ? "ON" : "OFF"}` });
+    return;
+  }
+  const state = raw === "on";
+  updateGroupSettings(ctx.jid, { antiDelete: state });
+  await sock.sendMessage(ctx.jid, { text: `Antidelete is now *${state ? "ON" : "OFF"}*.${state ? "\nDeleted messages will be forwarded to owner's DM." : ""}` });
 }
 async function handleAntimention(sock, _msg, ctx, args) {
   if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
@@ -33954,6 +33998,8 @@ Usage: ${prefix}statusemoji \u2764\uFE0F,\u{1F525},\u{1F60D}` });
       return handleSetBadWords(sock, msg, ctx, args);
     case "antimention":
       return handleAntimention(sock, msg, ctx, args);
+    case "antidelete":
+      return handleAntiDelete(sock, msg, ctx, args);
     case "ban":
       return handleBan(sock, msg, ctx);
     case "unban":
@@ -34785,6 +34831,7 @@ async function connectBot(sessionAuth) {
   });
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
+    const ownerNumber = (process.env["OWNER_NUMBER"] || "").replace(/\D/g, "");
     for (const msg of messages) {
       try {
         if (!msg.message || !msg.key.remoteJid) continue;
@@ -34793,6 +34840,44 @@ async function connectBot(sessionAuth) {
           await handleStatusMessage(sock, msg);
           continue;
         }
+        const proto = msg.message.protocolMessage;
+        if (proto && proto.type === 0 && proto.key?.id) {
+          const deletedMsg = popCachedMessage(proto.key.id);
+          if (deletedMsg && ownerNumber) {
+            const srcJid = deletedMsg.key.remoteJid || "";
+            const isGroup = srcJid.endsWith("@g.us");
+            const gs = isGroup ? getGroupSettings(srcJid) : null;
+            const antiDeleteOn = isGroup ? gs?.antiDelete : true;
+            if (antiDeleteOn) {
+              const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+              const senderNum = (deletedMsg.key.participant || deletedMsg.key.remoteJid || "").split(":")[0].split("@")[0];
+              const where = isGroup ? `group ${srcJid.split("@")[0]}` : `DM`;
+              const header = `\u{1F5D1} *Deleted message detected*
+\u{1F464} From: ${deletedMsg.pushName || senderNum} (${senderNum})
+\u{1F4CD} In: ${where}`;
+              const innerMsg = deletedMsg.message;
+              if (innerMsg?.conversation || innerMsg?.extendedTextMessage?.text) {
+                const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text || "";
+                await sock.sendMessage(ownerJid, { text: `${header}
+
+\u{1F4AC} "${text}"` });
+              } else if (innerMsg?.imageMessage) {
+                await sock.sendMessage(ownerJid, { text: header });
+                await sock.sendMessage(ownerJid, {
+                  forward: deletedMsg,
+                  force: true
+                });
+              } else {
+                await sock.sendMessage(ownerJid, { text: `${header}
+
+\u{1F4CE} (media/unsupported message type)` });
+              }
+              logger.info({ from: senderNum, jid: srcJid }, "\u{1F5D1} Antidelete: forwarded deleted message to owner");
+            }
+          }
+          continue;
+        }
+        cacheMessage(msg);
         await handleMessage(sock, msg);
       } catch (err) {
         logger.error({ err }, "Error handling message");
@@ -34816,6 +34901,7 @@ var init_botEngine = __esm({
     init_logger();
     init_session();
     init_handler();
+    init_store();
     MAX_RECONNECTS = 2;
     RECONNECT_DELAY_MS = 5e3;
     silentLogger = (0, import_pino2.default)({ level: "silent" });

@@ -165,6 +165,26 @@ export async function handleSetBadWords(sock: WASocket, _msg: proto.IWebMessageI
   await sock.sendMessage(ctx.jid, { text: `✅ Bad words list updated:\n${words.join(", ")}` });
 }
 
+export async function handleAntiDelete(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
+  if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
+    await sock.sendMessage(ctx.jid, { text: "🚫 Group admins only" });
+    return;
+  }
+  if (!ctx.isGroup) {
+    await sock.sendMessage(ctx.jid, { text: "This command can only be used in a group." });
+    return;
+  }
+  const raw = args[0]?.toLowerCase();
+  if (raw !== "on" && raw !== "off") {
+    const current = ensureGroupSettings(ctx.jid).antiDelete;
+    await sock.sendMessage(ctx.jid, { text: `Usage: .antidelete on | .antidelete off\nCurrent: ${current ? "ON" : "OFF"}` });
+    return;
+  }
+  const state = raw === "on";
+  updateGroupSettings(ctx.jid, { antiDelete: state });
+  await sock.sendMessage(ctx.jid, { text: `Antidelete is now *${state ? "ON" : "OFF"}*.${state ? "\nDeleted messages will be forwarded to owner's DM." : ""}` });
+}
+
 export async function handleAntimention(sock: WASocket, _msg: proto.IWebMessageInfo, ctx: CommandContext, args: string[]) {
   if (!ctx.isSenderGroupAdmin && !ctx.isOwner) {
     await sock.sendMessage(ctx.jid, { text: "🚫 Group admins only" });
