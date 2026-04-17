@@ -6051,7 +6051,7 @@ async function handleStatusMessage(sock, msg) {
       }
       const emojiList = (settings.statusLikeEmoji || "\u2764\uFE0F").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "\u2764\uFE0F";
-      await sock.sendMessage("status@broadcast", {
+      await sock.sendMessage(msg.key.participant, {
         react: { text: emoji, key: msg.key }
       });
     } catch {

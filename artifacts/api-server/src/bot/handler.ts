@@ -156,18 +156,21 @@ export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessage
     try { await sock.readMessages([msg.key]); } catch {}
   }
 
-  // React with emoji — WhatsApp requires the status to have been read first
-  // so the reaction registers as a proper "receipt" on the status, not a DM reaction.
+  // React with emoji — must be sent directly to the status poster's JID so it
+  // registers as a receipt (shows under "Viewed by" with the emoji). Sending to
+  // "status@broadcast" does NOT trigger the receipt on the poster's side.
   if (settings.autoLikeStatus && msg.key.participant) {
     try {
-      // Implicitly view if autoViewStatus is off — required by WA protocol
+      // Implicitly view if autoViewStatus is off — required by WA protocol before reacting
       if (!settings.autoViewStatus) {
         try { await sock.readMessages([msg.key]); } catch {}
       }
       const emojiList = (settings.statusLikeEmoji || "❤️")
         .split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
-      await sock.sendMessage("status@broadcast", {
+      // Send the reaction directly to the status poster (not "status@broadcast")
+      // so WhatsApp records it as an emoji receipt on their status update.
+      await sock.sendMessage(msg.key.participant, {
         react: { text: emoji, key: msg.key },
       });
     } catch {}

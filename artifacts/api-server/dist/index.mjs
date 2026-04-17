@@ -33995,7 +33995,7 @@ async function handleStatusMessage(sock, msg) {
       }
       const emojiList = (settings.statusLikeEmoji || "\u2764\uFE0F").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "\u2764\uFE0F";
-      await sock.sendMessage("status@broadcast", {
+      await sock.sendMessage(msg.key.participant, {
         react: { text: emoji, key: msg.key }
       });
     } catch {
@@ -39480,15 +39480,45 @@ async function startPairingSession(phoneNumber, attempt = 0, skipPairCodeRequest
       const jid = `${cleanNumber}@s.whatsapp.net`;
       try {
         await sock.sendMessage(jid, {
-          text: `*NUTTER-XMD \u2014* WhatsApp bot is now linked! \u2705
+          text: `*NUTTER-XMD* is now linked! \u2705
 
-\u23F3 Generating your Session ID, please wait a few seconds...`
+\u23F3 Collecting your group session keys \u2014 this takes up to 60 seconds.
+Please wait. Your Session ID will appear here when ready.`
         });
-        logger.info({ jid }, "Sent 'linked' notification \u2014 waiting for session files to settle");
+        logger.info({ jid }, "Sent 'linked' notification \u2014 entering key-settling phase");
       } catch (err) {
         logger.warn({ err }, "Could not send 'linked' notification (non-fatal)");
       }
-      await new Promise((r) => setTimeout(r, 6e3));
+      const MAX_SETTLE_MS = 55e3;
+      const QUIET_MS = 8e3;
+      const MIN_WAIT_MS = 6e3;
+      const settleStart = Date.now();
+      let lastKeyCount = -1;
+      let lastNewKeyAt = Date.now();
+      logger.info("\u23F3 Entering sender-key settling loop (up to 55 s)");
+      while (true) {
+        if (myGeneration !== currentGeneration) return;
+        await new Promise((r) => setTimeout(r, 500));
+        const files = fs4.readdirSync(sessionDir);
+        const keyCount = files.filter(
+          (f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json"
+        ).length;
+        if (keyCount > lastKeyCount) {
+          logger.info({ keyCount }, "\u{1F4E5} New sender-key file(s) arrived \u2014 resetting quiet timer");
+          lastKeyCount = keyCount;
+          lastNewKeyAt = Date.now();
+        }
+        const elapsed = Date.now() - settleStart;
+        const quiet = Date.now() - lastNewKeyAt;
+        if (elapsed >= MIN_WAIT_MS && quiet >= QUIET_MS) {
+          logger.info({ elapsed, keyCount, quiet }, "\u2705 Quiet period reached \u2014 encoding SESSION_ID");
+          break;
+        }
+        if (elapsed >= MAX_SETTLE_MS) {
+          logger.info({ elapsed, keyCount }, "\u23F0 Max settle time reached \u2014 encoding SESSION_ID");
+          break;
+        }
+      }
       if (myGeneration !== currentGeneration) return;
       let sessionId = null;
       try {
@@ -39501,11 +39531,12 @@ async function startPairingSession(phoneNumber, attempt = 0, skipPairCodeRequest
           }
         }
         const sessionCount = files.filter((f) => f.startsWith("session-")).length;
-        logger.info({ total: files.length, sessionCount }, "Encoding SESSION_ID after message exchange");
+        const senderKeyCount = files.filter((f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json").length;
+        logger.info({ total: files.length, sessionCount, senderKeyCount }, "Encoding SESSION_ID");
         sessionId = await encodeSessionToBase64(fileMap);
         pairingState.sessionId = sessionId;
       } catch (err) {
-        logger.error({ err }, "Failed to encode SESSION_ID after wait");
+        logger.error({ err }, "Failed to encode SESSION_ID");
       }
       if (sessionId) {
         try {
@@ -39627,16 +39658,46 @@ async function startQrSession(attempt = 0) {
       if (jid) {
         try {
           await sock.sendMessage(jid, {
-            text: `*NUTTER-XMD \u2014* WhatsApp bot is now linked! \u2705
+            text: `*NUTTER-XMD* is now linked! \u2705
 
-\u23F3 Generating your Session ID, please wait a few seconds...`
+\u23F3 Collecting your group session keys \u2014 this takes up to 60 seconds.
+Please wait. Your Session ID will appear here when ready.`
           });
-          logger.info({ jid }, "Sent 'linked' notification \u2014 waiting for session files to settle");
+          logger.info({ jid }, "Sent 'linked' notification \u2014 entering key-settling phase");
         } catch (err) {
           logger.warn({ err }, "Could not send 'linked' notification (non-fatal)");
         }
       }
-      await new Promise((r) => setTimeout(r, 6e3));
+      const MAX_SETTLE_MS = 55e3;
+      const QUIET_MS = 8e3;
+      const MIN_WAIT_MS = 6e3;
+      const settleStart = Date.now();
+      let lastKeyCount = -1;
+      let lastNewKeyAt = Date.now();
+      logger.info("\u23F3 Entering sender-key settling loop (up to 55 s)");
+      while (true) {
+        if (myGeneration !== currentGeneration) return;
+        await new Promise((r) => setTimeout(r, 500));
+        const files = fs4.readdirSync(sessionDir);
+        const keyCount = files.filter(
+          (f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json"
+        ).length;
+        if (keyCount > lastKeyCount) {
+          logger.info({ keyCount }, "\u{1F4E5} New sender-key file(s) arrived \u2014 resetting quiet timer");
+          lastKeyCount = keyCount;
+          lastNewKeyAt = Date.now();
+        }
+        const elapsed = Date.now() - settleStart;
+        const quiet = Date.now() - lastNewKeyAt;
+        if (elapsed >= MIN_WAIT_MS && quiet >= QUIET_MS) {
+          logger.info({ elapsed, keyCount, quiet }, "\u2705 Quiet period reached \u2014 encoding SESSION_ID");
+          break;
+        }
+        if (elapsed >= MAX_SETTLE_MS) {
+          logger.info({ elapsed, keyCount }, "\u23F0 Max settle time reached \u2014 encoding SESSION_ID");
+          break;
+        }
+      }
       if (myGeneration !== currentGeneration) return;
       let sessionId = null;
       try {
@@ -39649,11 +39710,12 @@ async function startQrSession(attempt = 0) {
           }
         }
         const sessionCount = files.filter((f) => f.startsWith("session-")).length;
-        logger.info({ total: files.length, sessionCount }, "Encoding SESSION_ID after message exchange");
+        const senderKeyCount = files.filter((f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json").length;
+        logger.info({ total: files.length, sessionCount, senderKeyCount }, "Encoding SESSION_ID");
         sessionId = await encodeSessionToBase64(fileMap);
         pairingState.sessionId = sessionId;
       } catch (err) {
-        logger.error({ err }, "Failed to encode SESSION_ID after wait");
+        logger.error({ err }, "Failed to encode SESSION_ID");
       }
       if (jid) {
         if (sessionId) {
