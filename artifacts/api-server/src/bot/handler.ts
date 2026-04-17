@@ -59,6 +59,10 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const senderNumber = senderJid.split("@")[0];
   const isOwner = senderNumber === ownerNumber;
 
+  // Private mode: only the owner can trigger any bot response
+  const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
+  if (botMode === "private" && !isOwner) return;
+
   const body =
     msg.message?.conversation ||
     msg.message?.extendedTextMessage?.text ||

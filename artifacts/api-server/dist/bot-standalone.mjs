@@ -29181,6 +29181,8 @@ async function handleMessage(sock, msg) {
   const senderJid = isGroup ? msg.key.participant || "" : jid;
   const senderNumber = senderJid.split("@")[0];
   const isOwner = senderNumber === ownerNumber;
+  const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
+  if (botMode === "private" && !isOwner) return;
   const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "";
   if (!body) return;
   let groupSettings = null;

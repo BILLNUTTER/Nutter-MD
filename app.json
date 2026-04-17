@@ -36,6 +36,11 @@
       "value": ".",
       "required": false
     },
+    "BOT_MODE": {
+      "description": "Set to 'public' so anyone can use bot commands, or 'private' so only the owner (OWNER_NUMBER) gets responses.",
+      "value": "public",
+      "required": false
+    },
     "NODE_ENV": {
       "description": "Node environment.",
       "value": "production",
