@@ -3,7 +3,7 @@ import { Boom } from "@hapi/boom";
 import { logger } from "../lib/logger";
 import { loadSessionFromEnv } from "./session";
 import { handleMessage, handleStatusMessage, handleGroupParticipantsUpdate } from "./handler";
-import { cacheMessage, popCachedMessage, getGroupSettings } from "./store";
+import { cacheMessage, popCachedMessage, getGroupSettings, getBotSettings } from "./store";
 import type { WASocket } from "@whiskeysockets/baileys";
 
 const MAX_RECONNECTS = 2;
@@ -260,6 +260,23 @@ async function connectBot(sessionAuth: {
       await handleGroupParticipantsUpdate(sock, update);
     } catch (err) {
       logger.error({ err }, "Error handling group update");
+    }
+  });
+
+  // ── Auto-reject calls ─────────────────────────────────────────────────────
+  sock.ev.on("call", async (calls) => {
+    const { autoRejectCall } = getBotSettings();
+    if (!autoRejectCall) return;
+
+    for (const call of calls) {
+      if (call.status !== "offer") continue;
+      try {
+        await sock.rejectCall(call.id, call.from);
+        await sock.sendMessage(call.from, { text: "🚫Calls are not allowed" });
+        logger.info({ from: call.from, callId: call.id }, "📵 Auto-rejected incoming call");
+      } catch (err) {
+        logger.warn({ err, from: call.from }, "Failed to reject call");
+      }
     }
   });
 

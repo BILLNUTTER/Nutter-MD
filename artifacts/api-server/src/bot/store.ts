@@ -23,6 +23,7 @@ export interface BotSettings {
   autoViewStatus: boolean;
   autoLikeStatus: boolean;
   statusLikeEmoji: string;
+  autoRejectCall: boolean;
 }
 
 // ── Group store ────────────────────────────────────────────────────────────────
@@ -36,11 +37,12 @@ export function ensureGroupSettings(groupId: string): GroupSettings {
   if (!groupStore.has(groupId)) {
     groupStore.set(groupId, {
       groupId,
-      antilink:      process.env["ANTI_LINK"]     === "true",
-      antibadword:   (process.env["ANTI_BAD_WORD"] === "true" ? "delete" : "off") as "off" | "delete" | "kick",
+      // Default true unless explicitly set to "false"
+      antilink:    process.env["ANTI_LINK"]     !== "false",
+      antibadword: (process.env["ANTI_BAD_WORD"] !== "false" ? "delete" : "off") as "off" | "delete" | "kick",
       customBadWords: null,
-      antimention:   process.env["ANTI_MENTION"]  === "true",
-      antiDelete: false,
+      antimention: process.env["ANTI_MENTION"]  !== "false",
+      antiDelete:  process.env["ANTI_DELETE"]   !== "false",
       mute: false,
       customPrefix: null,
       welcomeEnabled: false,
@@ -67,11 +69,12 @@ export function setUserBanned(userId: string, isBanned: boolean): void {
   userStore.set(userId, { userId, isBanned });
 }
 
-// ── Bot-level settings (initialised from env vars = app.json defaults) ────────
+// ── Bot-level settings — default TRUE unless env is explicitly "false" ─────────
 const botSettings: BotSettings = {
-  autoViewStatus: process.env["AUTO_VIEW_STATUS"] === "true",
-  autoLikeStatus: process.env["AUTO_LIKE_STATUS"] === "true",
+  autoViewStatus: process.env["AUTO_VIEW_STATUS"] !== "false",
+  autoLikeStatus: process.env["AUTO_LIKE_STATUS"] !== "false",
   statusLikeEmoji: process.env["STATUS_LIKE_EMOJI"] || "❤️",
+  autoRejectCall:  process.env["AUTO_REJECT_CALL"] !== "false",
 };
 
 export function getBotSettings(): BotSettings {

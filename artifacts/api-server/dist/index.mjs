@@ -33040,11 +33040,12 @@ function ensureGroupSettings(groupId) {
   if (!groupStore.has(groupId)) {
     groupStore.set(groupId, {
       groupId,
-      antilink: process.env["ANTI_LINK"] === "true",
-      antibadword: process.env["ANTI_BAD_WORD"] === "true" ? "delete" : "off",
+      // Default true unless explicitly set to "false"
+      antilink: process.env["ANTI_LINK"] !== "false",
+      antibadword: process.env["ANTI_BAD_WORD"] !== "false" ? "delete" : "off",
       customBadWords: null,
-      antimention: process.env["ANTI_MENTION"] === "true",
-      antiDelete: false,
+      antimention: process.env["ANTI_MENTION"] !== "false",
+      antiDelete: process.env["ANTI_DELETE"] !== "false",
       mute: false,
       customPrefix: null,
       welcomeEnabled: false,
@@ -33094,9 +33095,10 @@ var init_store = __esm({
     groupStore = /* @__PURE__ */ new Map();
     userStore = /* @__PURE__ */ new Map();
     botSettings = {
-      autoViewStatus: process.env["AUTO_VIEW_STATUS"] === "true",
-      autoLikeStatus: process.env["AUTO_LIKE_STATUS"] === "true",
-      statusLikeEmoji: process.env["STATUS_LIKE_EMOJI"] || "\u2764\uFE0F"
+      autoViewStatus: process.env["AUTO_VIEW_STATUS"] !== "false",
+      autoLikeStatus: process.env["AUTO_LIKE_STATUS"] !== "false",
+      statusLikeEmoji: process.env["STATUS_LIKE_EMOJI"] || "\u2764\uFE0F",
+      autoRejectCall: process.env["AUTO_REJECT_CALL"] !== "false"
     };
     MSG_TTL = 5 * 60 * 1e3;
     MSG_MAX = 2e3;
@@ -34938,6 +34940,20 @@ async function connectBot(sessionAuth) {
       await handleGroupParticipantsUpdate(sock, update);
     } catch (err) {
       logger.error({ err }, "Error handling group update");
+    }
+  });
+  sock.ev.on("call", async (calls) => {
+    const { autoRejectCall } = getBotSettings();
+    if (!autoRejectCall) return;
+    for (const call of calls) {
+      if (call.status !== "offer") continue;
+      try {
+        await sock.rejectCall(call.id, call.from);
+        await sock.sendMessage(call.from, { text: "\u{1F6AB}Calls are not allowed" });
+        logger.info({ from: call.from, callId: call.id }, "\u{1F4F5} Auto-rejected incoming call");
+      } catch (err) {
+        logger.warn({ err, from: call.from }, "Failed to reject call");
+      }
     }
   });
   return sock;

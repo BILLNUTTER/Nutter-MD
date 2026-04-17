@@ -35,12 +35,12 @@
 
     "AUTO_VIEW_STATUS": {
       "description": "Auto-view (mark as seen) every status update the bot receives. true or false.",
-      "value": "false",
+      "value": "true",
       "required": false
     },
     "AUTO_LIKE_STATUS": {
       "description": "Auto-react with an emoji to every status update the bot receives. true or false.",
-      "value": "false",
+      "value": "true",
       "required": false
     },
     "STATUS_LIKE_EMOJI": {
@@ -49,25 +49,30 @@
       "required": false
     },
 
-    "ANTI_LINK": {
-      "description": "Default antilink setting for all groups. true = block links, false = allow. Can be overridden per group with .antilink on/off.",
-      "value": "false",
-      "required": false
-    },
-    "ANTI_BAD_WORD": {
-      "description": "Default antibadword setting for all groups. true = filter bad words. Can be overridden per group with .antibadword on/off.",
-      "value": "false",
-      "required": false
-    },
-    "ANTI_MENTION": {
-      "description": "Default antimention setting for all groups. true = block mass mentions (5+). Can be overridden per group with .antimention on/off.",
-      "value": "false",
+    "AUTO_REJECT_CALL": {
+      "description": "Auto-reject all incoming calls and notify the caller. true or false.",
+      "value": "true",
       "required": false
     },
 
-    "NODE_ENV": {
-      "description": "Node environment. Leave as production.",
-      "value": "production",
+    "ANTI_LINK": {
+      "description": "Default antilink setting for all groups. false = allow links. Can be overridden per group with .antilink on/off.",
+      "value": "true",
+      "required": false
+    },
+    "ANTI_BAD_WORD": {
+      "description": "Default antibadword setting for all groups. false = off. Can be overridden per group with .antibadword on/off.",
+      "value": "true",
+      "required": false
+    },
+    "ANTI_MENTION": {
+      "description": "Default antimention setting for all groups. false = allow mass mentions. Can be overridden per group with .antimention on/off.",
+      "value": "true",
+      "required": false
+    },
+    "ANTI_DELETE": {
+      "description": "Default antidelete setting for all groups. false = off. Can be overridden per group with .antidelete on/off.",
+      "value": "true",
       "required": false
     }
   },
