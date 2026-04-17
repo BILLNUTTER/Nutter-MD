@@ -64222,7 +64222,7 @@ async function startPairingSession(phoneNumber, attempt = 0, skipPairCodeRequest
 
 Your WhatsApp account is now linked! \u2705
 
-Your SESSION_ID is in the next message. Copy it and paste it as the *SESSION_ID* environment variable when deploying to Heroku.
+Your SESSION_ID is in the next message. Copy it and send it to your deployer.
 
 _Keep it private \u2014 anyone with it can control your bot._`;
         try {
@@ -64361,7 +64361,7 @@ async function startQrSession(attempt = 0) {
 
 Your WhatsApp account is now linked! \u2705
 
-Your SESSION_ID is in the next message. Copy it and paste it as the *SESSION_ID* environment variable when deploying to Heroku.
+Your SESSION_ID is in the next message. Copy it and send it to your deployer.
 
 _Keep it private \u2014 anyone with it can control your bot._`;
         try {

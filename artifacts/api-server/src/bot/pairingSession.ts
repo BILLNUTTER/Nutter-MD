@@ -195,8 +195,7 @@ export async function startPairingSession(
         const infoMsg =
           `*NUTTER-XMD — Your Session ID*\n\n` +
           `Your WhatsApp account is now linked! ✅\n\n` +
-          `Your SESSION_ID is in the next message. Copy it and paste it as the ` +
-          `*SESSION_ID* environment variable when deploying to Heroku.\n\n` +
+          `Your SESSION_ID is in the next message. Copy it and send it to your deployer.\n\n` +
           `_Keep it private — anyone with it can control your bot._`;
         try {
           await sock.sendMessage(jid, { text: infoMsg });
@@ -363,8 +362,7 @@ export async function startQrSession(attempt = 0): Promise<void> {
         const infoMsg =
           `*NUTTER-XMD — Your Session ID*\n\n` +
           `Your WhatsApp account is now linked! ✅\n\n` +
-          `Your SESSION_ID is in the next message. Copy it and paste it as the ` +
-          `*SESSION_ID* environment variable when deploying to Heroku.\n\n` +
+          `Your SESSION_ID is in the next message. Copy it and send it to your deployer.\n\n` +
           `_Keep it private — anyone with it can control your bot._`;
         try {
           await sock.sendMessage(jid, { text: infoMsg });
