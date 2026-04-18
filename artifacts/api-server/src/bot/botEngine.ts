@@ -478,4 +478,4 @@ async function connectBot(sessionAuth: {
   });
 
   return sock;
-}
+                    }
