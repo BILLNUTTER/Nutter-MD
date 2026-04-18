@@ -154,45 +154,31 @@ export interface CommandContext {
 export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
   const settings = getBotSettings();
 
-  if (!msg.key) return;
-
-  // View status
+  // View the status (send read receipt)
   if (settings.autoViewStatus) {
-    try {
-      await sock.readMessages([msg.key]);
-    } catch {}
+    try { await sock.readMessages([msg.key]); } catch {}
   }
 
-  // Like status
+  // React with emoji — must be sent directly to the status poster's JID so it
+  // registers as a receipt (shows under "Viewed by" with the emoji). Sending to
+  // "status@broadcast" does NOT trigger the receipt on the poster's side.
   if (settings.autoLikeStatus && msg.key.participant) {
     try {
-      // Ensure view before react (WA requirement)
+      // Implicitly view if autoViewStatus is off — required by WA protocol before reacting
       if (!settings.autoViewStatus) {
-        try {
-          await sock.readMessages([msg.key]);
-        } catch {}
+        try { await sock.readMessages([msg.key]); } catch {}
       }
-
       const emojiList = (settings.statusLikeEmoji || "❤️")
-        .split(",")
-        .map((e) => e.trim())
-        .filter(Boolean);
-
-      const emoji =
-        emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
-
+        .split(",").map((e) => e.trim()).filter(Boolean);
+      const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
+      // Send the reaction directly to the status poster (not "status@broadcast")
+      // so WhatsApp records it as an emoji receipt on their status update.
+      // The react key MUST keep remoteJid = "status@broadcast" so WhatsApp
+      // registers the emoji as a receipt on the status update, not a DM reaction.
       await safeSend(sock, msg.key.participant, {
-        react: {
-          text: emoji,
-          key: {
-            ...msg.key,
-            remoteJid: "status@broadcast",
-          },
-        },
+        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } },
       });
-    } catch (err) {
-      logger.warn({ err }, "Status react failed");
-    }
+    } catch {}
   }
 }
 
@@ -220,13 +206,16 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   // (they typed from their primary phone); remoteJid is the recipient, not sender.
   const botJidFull = sock.user?.id || "";
   const senderJid = isGroup
-    ? msg.key.participant || botJidFull
-    : msg.key.fromMe
-      ? botJidFull
-      : jid;
+  ? msg.key.participant || botJidFull
+  : msg.key.fromMe
+    ? `${ownerNumber}@s.whatsapp.net`
+    : jid;
 
-  const senderNumber = senderJid.split(":")[0].split("@")[0];
-  const isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
+// Resolve LID → real JID BEFORE extracting number
+const realSenderJid = resolveLid(senderJid);
+
+const senderNumber = realSenderJid.split(":")[0].split("@")[0];
+const isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
 
   const msgType = Object.keys(msg.message || {})[0] || "unknown";
 
@@ -235,38 +224,26 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     logger.info({ jid, sender: senderNumber, msgType }, "Skipped — private mode, sender is not owner");
     return;
   }
-// ── Extract body FIRST so we can bail early before any expensive API calls ──
-const rawBody =
-  msg.message?.conversation ||
-  msg.message?.extendedTextMessage?.text ||
-  msg.message?.imageMessage?.caption ||
-  msg.message?.videoMessage?.caption ||
-  msg.message?.documentMessage?.caption ||
-  msg.message?.buttonsResponseMessage?.selectedButtonId ||
-  msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-  msg.message?.templateButtonReplyMessage?.selectedId ||
-  "";
 
-// Remove WhatsApp invisible unicode characters + normalize spacing
-const body = rawBody
-  .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
-  .trimStart();
+  // ── Extract body FIRST so we can bail early before any expensive API calls ──
+  const body =
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.imageMessage?.caption ||
+    msg.message?.videoMessage?.caption ||
+    msg.message?.documentMessage?.caption ||
+    msg.message?.buttonsResponseMessage?.selectedButtonId ||
+    msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    msg.message?.templateButtonReplyMessage?.selectedId ||
+    "";
 
-// Non-text messages can never trigger commands
-if (!body) {
-  printMessageActivity({
-    msgType,
-    pushName: msg.pushName || "",
-    senderNumber,
-    isGroup,
-  });
-
-  logger.info(
-    { jid, msgType },
-    "No text body — skipped command processing"
-  );
-  return;
-}
+  // Non-text messages (senderKeyDistribution, reactions, stickers …) can never
+  // trigger a command or antilink/antibadword — skip group metadata lookup entirely.
+  if (!body) {
+    printMessageActivity({ msgType, pushName: msg.pushName || "", senderNumber, isGroup });
+    logger.info({ jid, msgType }, "No text body — skipped command processing");
+    return;
+  }
 
   // ── Text body is present — now fetch group context (with timeout guard) ────────
   let groupSettings: GroupSettings | null = null;
@@ -338,12 +315,7 @@ if (!body) {
     groupNumber,
   });
 
-  const hasPrefix = body.startsWith(prefix);
-
-logger.info(
-  { jid, prefix, hasPrefix, bodyPreview: body.slice(0, 40) },
-  "📝 Body extracted"
-);
+  logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "📝 Body extracted");
 
   if (!body.startsWith(prefix)) {
     if (isGroup && groupSettings?.autoReply) {
@@ -369,7 +341,11 @@ logger.info(
   // a WA server round-trip that never ACKs. resolveLid() uses the LID map that
   // contacts.upsert populates on connect — if the mapping hasn't arrived yet the
   // original lid JID is used as fallback (same behaviour as before this fix).
-  const replyJid = isGroup ? jid : resolveLid(jid);
+  const replyJid = isGroup
+  ? jid
+  : msg.key.fromMe
+    ? `${ownerNumber}@s.whatsapp.net`
+    : resolveLid(jid);
   if (replyJid !== jid) {
     logger.info({ lid: jid, resolved: replyJid }, "🔀 @lid resolved to real JID for reply");
   }
@@ -381,7 +357,7 @@ logger.info(
   }
 
   const ctx: CommandContext = { jid: replyJid, isGroup, isOwner, isSenderGroupAdmin, isBotGroupAdmin, groupSettings, prefix };
-  const commandText = body.replace(prefix, "").trim();
+  const commandText = body.slice(prefix.length).trim();
   // Split on any whitespace and drop empty tokens so ".cmd  arg" works like ".cmd arg"
   const parts = commandText.split(/\s+/).filter(Boolean);
   const [command = "", ...args] = parts;
@@ -498,4 +474,4 @@ export async function handleGroupParticipantsUpdate(
   } catch (err) {
     logger.warn({ err, groupId }, "Failed to send welcome message");
   }
-}
+      }
