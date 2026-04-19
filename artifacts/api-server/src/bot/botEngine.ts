@@ -132,12 +132,14 @@ async function connectBot(sessionAuth: {
     logger: silentLogger,
     syncFullHistory: false,
     cachedGroupMetadata: async () => undefined,
-    // ← FIX: return a minimal stub on cache miss so Baileys still attempts
-    // decryption rather than silently dropping the retry.
+    // ← FIX: return undefined (not a fake empty message) on cache miss.
+    // Returning { conversation: "" } tells Baileys the message was found but
+    // empty — it skips the key-retry request so encrypted messages that fail
+    // MAC verification are never re-requested and stay as stubType:2 forever.
+    // Returning undefined correctly triggers a key-retry to the sender.
     getMessage: async (key) => {
       const cached = key.id ? popCachedMessage(key.id) : undefined;
-      if (cached?.message) return cached.message;
-      return { conversation: "" };
+      return cached?.message ?? undefined;
     },
   });
 
@@ -266,8 +268,11 @@ async function connectBot(sessionAuth: {
   sock.ev.on("messages.upsert", ({ messages, type }) => {
     logger.info({ type, count: messages.length }, "📨 messages.upsert fired");
 
-    if (type !== "notify" && type !== "append") {
-      logger.info({ type }, "↩ Skipped — type is neither notify nor append");
+    // ← FIX: only process "notify" — "append" brings replayed history and
+    // protocol messages that cause stubType:2 noise in the pipeline.
+    // The working bot reference also uses type !== "notify" as the only guard.
+    if (type !== "notify") {
+      logger.info({ type }, "↩ Skipped — type is not notify");
       return;
     }
 
@@ -285,15 +290,13 @@ async function connectBot(sessionAuth: {
         // ── FIX: LID-aware owner DM detection ─────────────────────────────
         //
         // When the owner DMs the bot, Baileys marks fromMe=true and remoteJid
-        // is the owner's @lid JID (e.g. "230022023483514@lid"). The LID number
-        // has NO relation to the owner's phone number (254734265579), so the
-        // old plain remoteNumber === ownerNumber check always returned false
-        // and every owner DM command was silently dropped.
+        // is the owner's @lid JID (e.g. "55427089834127@lid"). The LID number
+        // has NO relation to the owner's phone number (254734265579), so a
+        // plain remoteNumber === ownerNumber check always returns false and
+        // every owner DM command gets silently dropped.
         //
-        // Fix: resolve @lid → real @s.whatsapp.net JID using the map built from
-        // contacts.upsert, then extract the phone number for comparison.
-        // contacts.upsert fires very early on connect so the map is ready before
-        // the owner's first message in practice.
+        // Fix: resolve @lid → real @s.whatsapp.net using the contacts.upsert
+        // map, then extract the real phone number for comparison.
         const resolvedRemote = remoteJid.endsWith("@lid") ? resolveLid(remoteJid) : remoteJid;
         const resolvedNumber = resolvedRemote.split(":")[0].split("@")[0];
         const isOwnerDM      = !!ownerNumber && resolvedNumber === ownerNumber;
@@ -323,7 +326,7 @@ async function connectBot(sessionAuth: {
         if (stubType === 0) {
           logger.warn(
             { jid: remoteJid, hasMessage, hasJid, fromMe: msg.key?.fromMe },
-            "⚠️ Decryption failure — content is null. Re-pair to get fresh session files."
+            "⚠️ Decryption failure — re-pair to fix session keys."
           );
         } else {
           logger.info({ stubType, jid: remoteJid }, "↩ Protocol notification — skipped");
@@ -455,4 +458,4 @@ async function connectBot(sessionAuth: {
   });
 
   return sock;
-    }
+                      }
