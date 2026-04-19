@@ -8,15 +8,22 @@ import { promisify } from "util";
 const gzip   = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
-// Prefix that identifies a valid NUTTER-XMD session string.
-// Bumped to NUTTERX-MD::; so users know to regenerate after the full-state fix.
 export const SESSION_PREFIX = "NUTTERX-MD::;";
 
 export type SessionFileMap = Record<string, unknown>;
 
-// Tracks the active bot session directory (set when the bot successfully loads
-// its session). Used by the /bot/refresh-session endpoint to export a fresh
-// SESSION_ID that includes all sender-key + session files accumulated at runtime.
+// ── Stable session directory ──────────────────────────────────────────────────
+// FIX: was `nutter-xmd-session-${process.pid}` which on Heroku is always pid=4,
+// causing the directory to be deleted and recreated on every restart. This wiped
+// all Signal key material that Baileys accumulated at runtime (sender-key
+// exchanges, session ratchet advances), leaving only the stale pairing-time
+// snapshot from SESSION_ID — causing verifyMAC / Bad MAC decryption failures.
+//
+// Using a fixed name means the session directory survives restarts within the
+// same dyno lifetime. Baileys' useMultiFileAuthState reads from and writes to
+// this directory continuously so new keys are always current.
+const SESSION_DIR = path.join(os.tmpdir(), "nutter-xmd-session");
+
 let activeBotSessionDir: string | null = null;
 
 export function getActiveBotSessionDir(): string | null {
@@ -58,27 +65,47 @@ export async function loadSessionFromEnv(): Promise<{
 
     const { useMultiFileAuthState } = await import("@whiskeysockets/baileys");
 
-    const sessionDir = path.join(os.tmpdir(), `nutter-xmd-session-${process.pid}`);
-    if (fs.existsSync(sessionDir)) {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(sessionDir, { recursive: true });
+    // FIX: use a stable directory name — do NOT wipe it if it already exists.
+    // If the directory is present from a previous run within the same dyno
+    // lifetime, its files are more up-to-date than the SESSION_ID snapshot
+    // (Baileys has been writing new keys into it continuously). Only write
+    // files from SESSION_ID that don't already exist on disk so we never
+    // overwrite a newer runtime key with a stale pairing-time key.
+    const sessionDir = SESSION_DIR;
+    const isFirstBoot = !fs.existsSync(sessionDir);
 
-    const fileCount = Object.keys(fileMap).length;
+    if (isFirstBoot) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+      logger.info({ sessionDir }, "📁 Fresh session directory created");
+    } else {
+      logger.info({ sessionDir }, "📁 Reusing existing session directory (runtime keys preserved)");
+    }
+
+    // Write SESSION_ID files — skip any file that already exists on disk
+    // (the on-disk version is newer and should not be overwritten).
+    let written = 0;
+    let skipped = 0;
     for (const [filename, content] of Object.entries(fileMap)) {
-      fs.writeFileSync(path.join(sessionDir, filename), JSON.stringify(content), "utf-8");
+      const filePath = path.join(sessionDir, filename);
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, JSON.stringify(content), "utf-8");
+        written++;
+      } else {
+        skipped++;
+      }
     }
 
     const authState = await useMultiFileAuthState(sessionDir);
     activeBotSessionDir = sessionDir;
 
-    const allFiles = Object.keys(fileMap);
+    const allFiles       = fs.readdirSync(sessionDir);
     const sessionFiles   = allFiles.filter((f) => f.startsWith("session-")).length;
     const senderKeyFiles = allFiles.filter((f) => f.startsWith("sender-key-") && f !== "sender-key-memory.json").length;
     const preKeyFiles    = allFiles.filter((f) => f.startsWith("pre-key-")).length;
+
     logger.info(
-      { sessionDir, fileCount, sessionFiles, senderKeyFiles, preKeyFiles },
-      "📦 SESSION_ID loaded — session files control DM decrypt speed; sender-key files control group decrypt speed"
+      { sessionDir, totalOnDisk: allFiles.length, written, skipped, sessionFiles, senderKeyFiles, preKeyFiles },
+      "📦 Session loaded — runtime keys preserved, SESSION_ID files filled gaps"
     );
     return authState;
   } catch (err) {
@@ -87,55 +114,21 @@ export async function loadSessionFromEnv(): Promise<{
   }
 }
 
-// SESSION_ID encoding strategy — creds + pre-keys + P2P sessions + sender keys:
-//
-//   creds.json             — always required (identity / reconnection keys)
-//
-//   pre-key-*.json         — REQUIRED for new contacts.
-//     WA server gives a contact one of our pre-keys when they first message us.
-//     Without the private key on disk, Baileys fails silently (ACKs the message,
-//     never retries). Keeping up to MAX_PREKEYS newest keys covers all active ones.
-//
-//   session-*.json         — REQUIRED for fast DM decryption.
-//     These are the P2P Signal ratchet states (~1-2 KB each). Without them,
-//     every contact's FIRST message after each redeploy fails to decrypt and
-//     triggers a 30-120 s retry round-trip before the bot can reply.
-//
-//   sender-key-*.json      — CRITICAL: without these ALL group messages are delayed
-//   sender-key-memory.json   2 minutes every redeploy. WhatsApp uses sender keys
-//                            (not P2P sessions) for group encryption. If the key
-//                            is missing, WA holds the message and retries after
-//                            ~60-120 s once a fresh key is exchanged. Including
-//                            these files makes group commands instant.
-//
-//   NOT included: app-state-sync-* (chat history sync, not needed for decryption)
-//
-//   SIZE budget (raw JSON → gzip → base64, must stay under Heroku 64 KB limit):
-//     creds (~1 KB) + 50 pre-keys (~15 KB) + 150 KB sessions + 120 KB sender-keys
-//     → combined raw ~290 KB → gzip ~50-55 KB → base64 ~72 KB.
-//     The 60 000 char warning fires if approaching that limit; trim budgets if hit.
+// ── Encoding constants ────────────────────────────────────────────────────────
 const MAX_PREKEYS = 50;
-
-// Budget for session-*.json files (raw JSON bytes).
-const SESSION_RAW_BUDGET = 150_000;
-
-// Budget for sender-key-*.json files (raw JSON bytes).
-// sender-key files are ~0.5-2 KB each; 120 KB raw covers 60-240 active senders.
-// Combined with sessions this gzips to ~50 KB — safely under the 64 KB limit.
+const SESSION_RAW_BUDGET    = 150_000;
 const SENDER_KEY_RAW_BUDGET = 120_000;
 
 export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<string> {
   const toEncode: SessionFileMap = {};
 
-  // Always include creds.json (reconnection identity)
   if (fileMap["creds.json"]) {
     toEncode["creds.json"] = fileMap["creds.json"];
   } else {
     logger.warn("creds.json not found in fileMap — SESSION_ID may be invalid");
   }
 
-  // ── Pre-key files: needed so new contacts can establish Signal sessions ───────
-  // Sort ascending by numeric ID, take last MAX_PREKEYS (highest = most recent)
+  // ── Pre-key files ─────────────────────────────────────────────────────────
   const preKeyFiles = Object.keys(fileMap)
     .filter((f) => f.startsWith("pre-key-") && f.endsWith(".json"))
     .sort((a, b) => {
@@ -149,14 +142,11 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
     toEncode[f] = fileMap[f];
   }
 
-  // ── Session files: preserve Signal sessions with existing contacts ────────────
-  // Without these, every contact needs a retry round-trip (30-60 s delay) after
-  // redeployment because the bot cannot decrypt their first message.
-  // With them, the bot decrypts immediately using the saved Signal chain state.
+  // ── Session files ─────────────────────────────────────────────────────────
   let sessionRawBytes = 0;
   const sessionFiles = Object.keys(fileMap)
     .filter((f) => f.startsWith("session-") && f.endsWith(".json"))
-    .sort(); // consistent order; all are equally "recent" from WA's perspective
+    .sort();
 
   for (const f of sessionFiles) {
     const size = JSON.stringify(fileMap[f]).length;
@@ -167,17 +157,28 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
 
   const sessionCount = Object.keys(toEncode).filter((f) => f.startsWith("session-")).length;
 
-  // ── Sender-key files: prevent 2-minute group message delays ─────────────────
-  // sender-key-memory.json is the index file Baileys reads first — include it
-  // unconditionally (it is small, usually <5 KB).
+  // ── Sender-key files ──────────────────────────────────────────────────────
   if (fileMap["sender-key-memory.json"]) {
     toEncode["sender-key-memory.json"] = fileMap["sender-key-memory.json"];
   }
 
+  // FIX: sort by most recently modified first so the newest (most active) sender
+  // keys are included when the budget is hit, not the alphabetically first ones.
+  // The old alphabetical sort meant the newest group sender keys were silently
+  // dropped, causing 2-minute group message delays after redeploy.
   let senderKeyRawBytes = 0;
+  const sessionDirForStat = activeBotSessionDir ?? os.tmpdir();
   const senderKeyFiles = Object.keys(fileMap)
     .filter((f) => f.startsWith("sender-key-") && f.endsWith(".json") && f !== "sender-key-memory.json")
-    .sort();
+    .sort((a, b) => {
+      try {
+        const mtimeA = fs.statSync(path.join(sessionDirForStat, a)).mtimeMs;
+        const mtimeB = fs.statSync(path.join(sessionDirForStat, b)).mtimeMs;
+        return mtimeB - mtimeA; // newest first
+      } catch {
+        return a.localeCompare(b); // fallback to alphabetical if stat fails
+      }
+    });
 
   for (const f of senderKeyFiles) {
     const size = JSON.stringify(fileMap[f]).length;
@@ -190,10 +191,12 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
 
   logger.info(
     {
-      totalFiles: Object.keys(toEncode).length,
-      preKeys: preKeyFiles.length,
-      sessions: sessionCount,
-      senderKeys: senderKeyCount,
+      totalFiles:   Object.keys(toEncode).length,
+      preKeys:      preKeyFiles.length,
+      sessions:     sessionCount,
+      senderKeys:   senderKeyCount,
+      sessionBytes: sessionRawBytes,
+      senderBytes:  senderKeyRawBytes,
     },
     "Encoding session (creds + pre-keys + sessions + sender-keys)"
   );
@@ -209,10 +212,7 @@ export async function encodeSessionToBase64(fileMap: SessionFileMap): Promise<st
       "SESSION_ID is large — approaching Heroku 64 KB limit. Consider re-pairing."
     );
   } else {
-    logger.info(
-      { charLen, herokuLimit: 65536 },
-      "SESSION_ID size OK"
-    );
+    logger.info({ charLen, herokuLimit: 65536 }, "SESSION_ID size OK");
   }
   return encoded;
 }
