@@ -53,14 +53,12 @@ const GROUP_META_TIMEOUT = 5_000;
 async function getCachedGroupMeta(sock: WASocket, jid: string): Promise<GroupMetaEntry> {
   const cached = groupMetaCache.get(jid);
   if (cached && cached.expireAt > Date.now()) return cached;
-
   const meta = await Promise.race([
     sock.groupMetadata(jid),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`groupMetadata timeout for ${jid}`)), GROUP_META_TIMEOUT)
     ),
   ]);
-
   const entry: GroupMetaEntry = {
     subject: meta.subject,
     participants: meta.participants as GroupMetaEntry["participants"],
@@ -98,31 +96,20 @@ export function upsertGroupMetaCache(
 }
 
 function printMessageActivity(opts: {
-  msgType: string;
-  pushName: string;
-  senderNumber: string;
-  isGroup: boolean;
-  groupName?: string;
-  groupNumber?: string;
-  isDM?: boolean;
+  msgType: string; pushName: string; senderNumber: string;
+  isGroup: boolean; groupName?: string; groupNumber?: string;
 }) {
   const botName = (process.env["BOT_NAME"] || "NUTTER-XMD").toUpperCase().split("").join(" ");
-  const border = "╔════════════════════════════╗";
-  const title  = "║ ✉   N E W   M E S S A G E   ✉ ║";
-  const bottom = "╚════════════════════════════╝";
-
   console.log(`\t ✦ ✦ ✦ { ${botName} } ✦ ✦ ✦`);
-  console.log(border);
-  console.log(title);
-  console.log(bottom);
-
+  console.log("╔════════════════════════════╗");
+  console.log("║ ✉   N E W   M E S S A G E   ✉ ║");
+  console.log("╚════════════════════════════╝");
   if (opts.isGroup && opts.groupName) {
     console.log(`👥 Group: ${opts.groupName}`);
     console.log(`   ↳ Group ID: (${opts.groupNumber || ""})`);
   } else {
-    console.log(`💬 Direct Message`);
+    console.log("💬 Direct Message");
   }
-
   console.log(`👤 Sender: [${opts.pushName || opts.senderNumber}]`);
   console.log(`🆔 JID: ${opts.senderNumber}`);
   console.log(`📋 Message Type: ${opts.msgType}`);
@@ -142,18 +129,15 @@ export interface CommandContext {
 // ── Status broadcast handler ───────────────────────────────────────────────────
 export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
   const settings = getBotSettings();
-
   if (settings.autoViewStatus) {
     try { await sock.readMessages([msg.key]); } catch {}
   }
-
   if (settings.autoLikeStatus && msg.key.participant) {
     try {
       if (!settings.autoViewStatus) {
         try { await sock.readMessages([msg.key]); } catch {}
       }
-      const emojiList = (settings.statusLikeEmoji || "❤️")
-        .split(",").map((e) => e.trim()).filter(Boolean);
+      const emojiList = (settings.statusLikeEmoji || "❤️").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
       await safeSend(sock, msg.key.participant, {
         react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } },
@@ -169,7 +153,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     return;
   }
 
-  const ownerNumber  = (process.env["OWNER_NUMBER"] || "").replace(/[^0-9]/g, "");
+  const ownerNumber   = (process.env["OWNER_NUMBER"] || "").replace(/[^0-9]/g, "");
   const defaultPrefix = process.env["PREFIX"] || ".";
 
   const jid = msg.key.remoteJid;
@@ -178,9 +162,7 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     return;
   }
 
-  // ── Safety net: drop protocol/Signal housekeeping messages ────────────────
-  // connection.ts already filters these but this guard catches anything that
-  // slips through (e.g. antidelete REVOKE that wasn't caught upstream).
+  // Drop protocol messages that slipped through connection.ts
   const msgContent = msg.message;
   if (
     msgContent?.protocolMessage ||
@@ -189,33 +171,45 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     msgContent?.keepInChatMessage ||
     msgContent?.senderKeyDistributionMessage
   ) {
-    logger.info({ jid, type: msgContent ? Object.keys(msgContent)[0] : "unknown" }, "↩ Protocol/reaction message — dropped in handler");
+    logger.info({ jid, type: msgContent ? Object.keys(msgContent)[0] : "unknown" }, "↩ Protocol message dropped in handler");
     return;
   }
 
   logger.info({ jid, fromMe: msg.key.fromMe, msgKeys: Object.keys(msg.message || {}) }, "📩 handleMessage reached");
 
-  const isGroup = jid.endsWith("@g.us");
+  const isGroup    = jid.endsWith("@g.us");
   const botJidFull = sock.user?.id || "";
 
-  const senderJid = isGroup
-    ? msg.key.participant || botJidFull
-    : msg.key.fromMe
-      ? `${ownerNumber}@s.whatsapp.net`
+  // ── isOwner detection — does NOT rely on LID resolution ──────────────────
+  // Three ways to be owner:
+  //   1. In a DM, msg.key.fromMe=true — only the owner's paired phone sends these
+  //   2. In a group, the sender's resolved phone number matches OWNER_NUMBER
+  //   3. In a DM, the sender's resolved phone number matches OWNER_NUMBER
+  //
+  // This means DM commands from the owner always work even before contacts.upsert
+  // has fired and registered the LID→JID mapping.
+  let isOwner = false;
+
+  if (!isGroup && msg.key.fromMe) {
+    // fromMe DM = owner by definition (only the paired phone can send these)
+    isOwner = true;
+    logger.info({ jid }, "👑 Owner identified via fromMe=true");
+  } else {
+    // For group messages or incoming DMs, resolve LID and compare phone numbers
+    const senderRaw = isGroup
+      ? (msg.key.participant || botJidFull)
       : jid;
-
-  // Resolve LID → real JID BEFORE extracting number
-  const realSenderJid = resolveLid(senderJid);
-  const senderNumber  = realSenderJid.split(":")[0].split("@")[0];
-  const isOwner       = ownerNumber !== "" && senderNumber === ownerNumber;
-
-  logger.info({ ownerNumber, senderNumber, isOwner, fromMe: msg.key.fromMe }, "🔑 Owner resolution");
+    const senderResolved = resolveLid(senderRaw);
+    const senderNumber   = senderResolved.split(":")[0].split("@")[0];
+    isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
+    logger.info({ ownerNumber, senderNumber, senderRaw, senderResolved, isOwner }, "🔑 Owner resolution");
+  }
 
   const msgType = Object.keys(msg.message || {})[0] || "unknown";
 
   const botMode = (process.env["BOT_MODE"] || "public").toLowerCase();
   if (botMode === "private" && !isOwner) {
-    logger.info({ jid, sender: senderNumber, msgType }, "Skipped — private mode, sender is not owner");
+    logger.info({ jid, msgType }, "Skipped — private mode");
     return;
   }
 
@@ -230,9 +224,14 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     msg.message?.templateButtonReplyMessage?.selectedId ||
     "";
 
+  // For display purposes — derive senderNumber from available info
+  const senderJidRaw  = isGroup ? (msg.key.participant || botJidFull) : (msg.key.fromMe ? `${ownerNumber}@s.whatsapp.net` : jid);
+  const realSenderJid = resolveLid(senderJidRaw);
+  const senderNumber  = realSenderJid.split(":")[0].split("@")[0];
+
   if (!body) {
     printMessageActivity({ msgType, pushName: msg.pushName || "", senderNumber, isGroup });
-    logger.info({ jid, msgType }, "No text body — skipped command processing");
+    logger.info({ jid, msgType }, "No text body — skipped");
     return;
   }
 
@@ -267,22 +266,19 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
           await safeSend(sock, jid, { text: "Links are not allowed in this group." });
           return;
         }
-
         const badWordList = groupSettings.customBadWords
           ? groupSettings.customBadWords.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean)
           : DEFAULT_BAD_WORDS;
         if (groupSettings.antibadword !== "off" && !isOwner && badWordList.some((w) => body.toLowerCase().includes(w))) {
           await safeSend(sock, jid, { delete: msgKey });
           if (groupSettings.antibadword === "kick") {
-            // FIX: use realSenderJid (resolved from @lid) for group operations
             await sock.groupParticipantsUpdate(jid, [realSenderJid], "remove");
-            await safeSend(sock, jid, { text: `@${realSenderJid.split("@")[0]} was kicked for using bad language.`, mentions: [realSenderJid] });
+            await safeSend(sock, jid, { text: `@${realSenderJid.split("@")[0]} was kicked for bad language.`, mentions: [realSenderJid] });
           } else {
             await safeSend(sock, jid, { text: "Bad language is not allowed." });
           }
           return;
         }
-
         if (groupSettings.antimention && !isOwner && !isSenderGroupAdmin) {
           const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           if (mentions.length >= 5) {
@@ -293,19 +289,11 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
         }
       }
     } catch (err) {
-      logger.warn({ err, jid }, "Failed to fetch group metadata — continuing without admin info");
+      logger.warn({ err, jid }, "Failed to fetch group metadata — continuing");
     }
   }
 
-  printMessageActivity({
-    msgType,
-    pushName: msg.pushName || "",
-    senderNumber,
-    isGroup,
-    groupName,
-    groupNumber,
-  });
-
+  printMessageActivity({ msgType, pushName: msg.pushName || "", senderNumber, isGroup, groupName, groupNumber });
   logger.info({ jid, prefix, hasPrefix: body.startsWith(prefix), bodyPreview: body.slice(0, 40) }, "📝 Body extracted");
 
   if (!body.startsWith(prefix)) {
@@ -313,20 +301,14 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       try {
         const autoReplyMap: Record<string, string> = JSON.parse(groupSettings.autoReply);
         const bodyLower = body.toLowerCase().trim();
-        const matched = Object.entries(autoReplyMap).find(([trigger]) =>
-          bodyLower.includes(trigger.toLowerCase())
-        );
-        if (matched) {
-          await safeSend(sock, jid, { text: matched[1] });
-        }
-      } catch {
-        // skip auto-reply if parsing fails
-      }
+        const matched = Object.entries(autoReplyMap).find(([trigger]) => bodyLower.includes(trigger.toLowerCase()));
+        if (matched) await safeSend(sock, jid, { text: matched[1] });
+      } catch { /* skip */ }
     }
     return;
   }
 
-  // Resolve reply JID — always use real @s.whatsapp.net, never @lid
+  // Resolve reply JID — always send to real @s.whatsapp.net, never @lid
   const replyJid = isGroup
     ? jid
     : msg.key.fromMe
@@ -334,10 +316,9 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       : resolveLid(jid);
 
   if (replyJid !== jid) {
-    logger.info({ lid: jid, resolved: replyJid }, "🔀 @lid resolved to real JID for reply");
+    logger.info({ lid: jid, resolved: replyJid }, "🔀 @lid resolved for reply");
   }
 
-  // FIX: use realSenderJid (resolved) for ban lookup so @lid users are found correctly
   const userSettings = getUserSettings(realSenderJid);
   if (userSettings?.isBanned && !isOwner) {
     await safeSend(sock, replyJid, { text: "You are banned from using this bot." });
@@ -350,22 +331,19 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const [command = "", ...args] = parts;
   const cmd = command.toLowerCase();
 
-  logger.info({ cmd, jid, replyJid, sender: senderNumber, isOwner }, "Command received");
+  logger.info({ cmd, jid, replyJid, isOwner }, "Command received");
 
   switch (cmd) {
-    // ── General ──────────────────────────────────────────────────────────────
-    case "ping":          return handlePing(sock, msg, ctx);
-    case "alive":         return handleAlive(sock, msg, ctx);
-    case "menu":          return handleMenu(sock, msg, ctx, prefix);
-    case "owner":         return handleOwner(sock, msg, ctx);
-    case "settings":      return handleSettings(sock, msg, ctx, prefix);
-    case "sticker":       return handleSticker(sock, msg, ctx);
-    case "restart":       return handleRestart(sock, msg, ctx);
+    case "ping":           return handlePing(sock, msg, ctx);
+    case "alive":          return handleAlive(sock, msg, ctx);
+    case "menu":           return handleMenu(sock, msg, ctx, prefix);
+    case "owner":          return handleOwner(sock, msg, ctx);
+    case "settings":       return handleSettings(sock, msg, ctx, prefix);
+    case "sticker":        return handleSticker(sock, msg, ctx);
+    case "restart":        return handleRestart(sock, msg, ctx);
     case "refreshsession":
-    case "getsession":    return handleRefreshSession(sock, msg, ctx);
+    case "getsession":     return handleRefreshSession(sock, msg, ctx);
 
-    // ── Bot status settings (owner only) ─────────────────────────────────────
-    // FIX: all use replyJid instead of raw jid
     case "autoviewstatus":
     case "autoview": {
       if (!isOwner) { await safeSend(sock, replyJid, { text: "🚫 Only owner command" }); return; }
@@ -406,7 +384,6 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       return;
     }
 
-    // ── Group management ──────────────────────────────────────────────────────
     case "kick":          return handleKick(sock, msg, ctx);
     case "add":           return handleAdd(sock, msg, ctx, args);
     case "promote":       return handlePromote(sock, msg, ctx);
@@ -437,27 +414,19 @@ export async function handleGroupParticipantsUpdate(
   update: { id: string; participants: Array<{ id: string } | string>; action: string }
 ) {
   if (update.action !== "add") return;
-
   const groupId = update.id;
   try {
     const settings = getGroupSettings(groupId);
     if (!settings?.welcomeEnabled) return;
-
     const groupMeta = await sock.groupMetadata(groupId);
     const welcomeTemplate = settings.welcomeMessage || "Welcome to *{group}*, {name}! 🎉";
-
     for (const participant of update.participants) {
       const participantJid = typeof participant === "string" ? participant : participant.id;
-      const number = participantJid.split("@")[0];
-      const name   = `@${number}`;
+      const name = `@${participantJid.split("@")[0]}`;
       const welcomeText = welcomeTemplate
         .replace(/\{name\}/gi, name)
         .replace(/\{group\}/gi, groupMeta.subject);
-
-      await safeSend(sock, groupId, {
-        text: welcomeText,
-        mentions: [participantJid],
-      });
+      await safeSend(sock, groupId, { text: welcomeText, mentions: [participantJid] });
     }
   } catch (err) {
     logger.warn({ err, groupId }, "Failed to send welcome message");
