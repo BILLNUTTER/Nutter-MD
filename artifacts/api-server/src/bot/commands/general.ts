@@ -94,7 +94,7 @@ function buildMenuText(prefix: string, pushName: string): string {
 
 export async function handlePing(sock: WASocket, msg: proto.IWebMessageInfo, ctx: CommandContext) {
   const start = Date.now();
-  await safeSend(sock, ctx.jid, { text: "🏓 Measuring..." }, { quoted: msg });
+  await safeSend(sock, ctx.jid, { text: "🏓 Pinging..." }, { quoted: msg });
   const latency = Date.now() - start;
   await safeSend(sock, ctx.jid, { text: `🏓 *Pong!*\n*Latency:* ${latency}ms` }, { quoted: msg });
 }
