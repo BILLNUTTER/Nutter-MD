@@ -146,6 +146,10 @@ export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessage
   }
 }
 
+// ── Version marker — visible in logs on every message, confirms deployment ────
+// Change this string any time you deploy so you can verify the new build is live.
+const HANDLER_VERSION = "v2.1-LID-FIX";
+
 // ── Main message handler ───────────────────────────────────────────────────────
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
   if (!msg.key) {
@@ -161,6 +165,9 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     logger.warn("handleMessage: no remoteJid — dropped");
     return;
   }
+
+  // Log version on first call so you can confirm the right build is deployed
+  logger.info({ v: HANDLER_VERSION, jid }, "🔖 handler version");
 
   // Drop protocol/Signal housekeeping messages
   const msgContent = msg.message;
