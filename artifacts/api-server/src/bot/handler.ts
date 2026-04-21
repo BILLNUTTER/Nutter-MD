@@ -201,8 +201,11 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       : jid;
     const senderResolved = resolveLid(senderRaw);
     const senderNumber   = senderResolved.split(":")[0].split("@")[0];
-    isOwner = ownerNumber !== "" && senderNumber === ownerNumber;
-    logger.info({ ownerNumber, senderNumber, senderRaw, senderResolved, isOwner }, "🔑 Owner resolution");
+    const numberMatch    = ownerNumber !== "" && senderNumber === ownerNumber;
+    // Unresolved @lid in a DM = can only be the owner (only the paired phone sends DMs to the bot)
+    const isUnresolvedOwnerLid = !isGroup && jid.endsWith("@lid") && senderResolved.endsWith("@lid");
+    isOwner = numberMatch || isUnresolvedOwnerLid;
+    logger.info({ ownerNumber, senderNumber, senderRaw, senderResolved, isUnresolvedOwnerLid, isOwner }, "🔑 Owner resolution");
   }
 
   const msgType = Object.keys(msg.message || {})[0] || "unknown";
