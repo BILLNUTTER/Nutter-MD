@@ -27,15 +27,15 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY artifacts/api-server/package.json ./artifacts/api-server/
 COPY artifacts/nutter-xmd/package.json ./artifacts/nutter-xmd/
 
-# Install all dependencies
+# Install all dependencies (including devDependencies needed for build)
 RUN pnpm install --frozen-lockfile --prod=false
 
 # Copy full source
 COPY . .
 
-# Build both packages from source
-RUN pnpm --filter @workspace/nutter-xmd run build \
-    && pnpm --filter @workspace/api-server run build
+# Build ONLY the api-server (bot backend) from source.
+# The nutter-xmd frontend dist is committed to the repo and copied as-is.
+RUN pnpm --filter @workspace/api-server run build
 
 ENV NODE_ENV=production
 
