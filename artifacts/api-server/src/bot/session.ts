@@ -116,22 +116,38 @@ export async function loadSessionFromEnv(): Promise<{
     "✅ Session loaded — Baileys auth state ready"
   );
 
-  // ── Auto-export enriched SESSION_ID after 3 minutes ──────────────────────
-  // At pairing time the SESSION_ID has almost no session/sender-key files.
-  // After 3 minutes of running, Baileys has negotiated Signal sessions with
-  // all your contacts and groups. We auto-export the enriched SESSION_ID and
-  // log it so you can copy it as your permanent SESSION_ID — no more delays
-  // on cold starts for existing contacts.
-  setTimeout(async () => {
+  // ── Auto-export enriched SESSION_ID once Baileys fully settles ───────────
+  //
+  // Strategy: wait for Baileys to finish its initial sync burst before
+  // exporting. We track three signals that indicate the session is warm:
+  //   1. contacts.upsert has fired at least once (LID mappings registered)
+  //   2. At least one session-*.json file exists on disk (Signal sessions ready)
+  //   3. A 90-second quiet period after the last contacts.upsert event
+  //      (ensures the bulk sync is fully complete before we snapshot)
+  //
+  // This means:
+  //   - On a brand-new pairing: export fires ~90s after contacts finish loading
+  //   - On restarts with a rich SESSION_ID: export is skipped (no improvement needed)
+  //   - The exported SESSION_ID is sent to Heroku logs — copy it once, never regenerate
+  //
+  // NOTE: This export only needs to happen ONCE after the first pairing.
+  // After you update SESSION_ID in Heroku, this logic will see sessions already
+  // on disk from the SESSION_ID and skip the export entirely.
+
+  let contactsUpsertFired = false;
+  let lastContactsUpsertAt = 0;
+  let exportScheduled = false;
+
+  async function doExport() {
     try {
       const currentFiles = fs.readdirSync(sessionDir);
       const sessionCount   = currentFiles.filter(f => f.startsWith("session-")).length;
       const senderKeyCount = currentFiles.filter(f => f.startsWith("sender-key-") && f !== "sender-key-memory.json").length;
 
-      // Only export if we have meaningfully more sessions than we started with
       const startingSessions = fileKeys.filter(f => f.startsWith("session-")).length;
+
       if (sessionCount <= startingSessions && senderKeyCount === 0) {
-        logger.info({ sessionCount, senderKeyCount }, "⏭ Auto-export skipped — no new sessions accumulated yet");
+        logger.info({ sessionCount, senderKeyCount }, "⏭ Session export skipped — no new sessions accumulated");
         return;
       }
 
@@ -144,19 +160,54 @@ export async function loadSessionFromEnv(): Promise<{
 
       const newSessionId = await encodeSessionToBase64(updatedFileMap);
       logger.info(
-        {
-          sessionCount,
-          senderKeyCount,
-          sessionIdLength: newSessionId.length,
-        },
-        "🔄 Auto-exported enriched SESSION_ID — copy this to your Heroku SESSION_ID config var for instant future starts"
+        { sessionCount, senderKeyCount, sessionIdLength: newSessionId.length },
+        "✅ SESSION_ID fully enriched — Baileys sync complete. Copy the value below to Heroku SESSION_ID config var:"
       );
-      // Log the full SESSION_ID so it can be copied from Heroku logs
-      logger.info({ SESSION_ID: newSessionId }, "📋 ENRICHED SESSION_ID (copy this value)");
+      logger.info({ SESSION_ID: newSessionId }, "📋 ENRICHED SESSION_ID");
     } catch (err) {
-      logger.warn({ err }, "Auto SESSION_ID export failed — use .refreshsession instead");
+      logger.warn({ err }, "Session export failed — use .refreshsession instead");
     }
-  }, 3 * 60 * 1000); // 3 minutes after startup
+  }
+
+  function scheduleExportAfterQuiet() {
+    if (exportScheduled) return;
+    exportScheduled = true;
+    // Wait 90 seconds of quiet after last contacts.upsert before snapshotting.
+    // This ensures Baileys has finished the full contact/session sync burst.
+    const CHECK_INTERVAL = 5_000;   // check every 5s
+    const QUIET_WINDOW   = 90_000;  // 90s of no new contacts.upsert = sync done
+    const MAX_WAIT       = 300_000; // hard cap: export no later than 5 minutes
+
+    const started = Date.now();
+
+    const interval = setInterval(async () => {
+      const quietFor = Date.now() - lastContactsUpsertAt;
+      const elapsed  = Date.now() - started;
+
+      const sessionCount = fs.readdirSync(sessionDir).filter(f => f.startsWith("session-")).length;
+      const isReady = (contactsUpsertFired && quietFor >= QUIET_WINDOW && sessionCount > 0)
+                   || elapsed >= MAX_WAIT;
+
+      if (isReady) {
+        clearInterval(interval);
+        logger.info({ quietFor, elapsed, sessionCount }, "🔄 Baileys sync settled — exporting enriched SESSION_ID");
+        await doExport();
+      } else {
+        logger.info({ quietFor, elapsed, sessionCount, waitingFor: Math.max(0, QUIET_WINDOW - quietFor) }, "⏳ Waiting for Baileys sync to settle...");
+      }
+    }, CHECK_INTERVAL);
+  }
+
+  // Hook into contacts.upsert to track when Baileys is syncing
+  // We export the authState first so Baileys can start, then we attach
+  // the export trigger via a one-time listener on the returned authState.
+  // The actual listener attachment happens in connection.ts which calls
+  // sock.ev.on("contacts.upsert") — we expose a callback here instead.
+  (globalThis as any).__nutterOnContactsUpsert = () => {
+    contactsUpsertFired = true;
+    lastContactsUpsertAt = Date.now();
+    scheduleExportAfterQuiet();
+  };
 
   return authState;
 }
