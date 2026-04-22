@@ -22,19 +22,25 @@ RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.co
 # Install pnpm globally
 RUN npm install -g pnpm --loglevel=error --no-fund --no-audit
 
-# Copy package files first for better layer caching
+# Copy ALL package.json files from every workspace package before pnpm install
+# so pnpm can resolve all local workspace dependencies (including lib/* packages)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY artifacts/api-server/package.json ./artifacts/api-server/
 COPY artifacts/nutter-xmd/package.json ./artifacts/nutter-xmd/
 
-# Install all dependencies (including devDependencies needed for build)
+# Copy lib/* package.json files — these are workspace packages that api-server depends on
+# (e.g. lib/api-zod needs zod, lib/api-client-react needs @tanstack/react-query, etc.)
+# We copy the entire lib directory structure so pnpm resolves all local deps correctly
+COPY lib/ ./lib/
+
+# Install all dependencies including workspace libs
 RUN pnpm install --frozen-lockfile --prod=false
 
-# Copy full source
+# Copy remaining source files
 COPY . .
 
 # Build ONLY the api-server (bot backend) from source.
-# The nutter-xmd frontend dist is committed to the repo and copied as-is.
+# The nutter-xmd frontend dist is committed to the repo and used as-is.
 RUN pnpm --filter @workspace/api-server run build
 
 ENV NODE_ENV=production
