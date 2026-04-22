@@ -144,6 +144,10 @@ async function connectBot(sessionAuth: {
     if (mapped > 0) {
       logger.info({ mapped }, "📇 LID→JID mappings registered from contacts.upsert");
     }
+    // Notify session.ts export logic that contacts are still syncing
+    if (typeof (globalThis as any).__nutterOnContactsUpsert === "function") {
+      (globalThis as any).__nutterOnContactsUpsert();
+    }
   });
 
   sock.ev.on("connection.update", async (update) => {
