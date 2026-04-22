@@ -259,28 +259,26 @@ async function connectBot(sessionAuth: {
       const remoteJid    = msg.key?.remoteJid || "";
       const remoteNumber = remoteJid.split(":")[0].split("@")[0];
 
+      // ── FIX 1: Status broadcasts handled FIRST before any other filtering ─
+      // Status messages can arrive as protocolMessage or senderKeyDistribution
+      // which would get dropped by the protocol filter below. We must route
+      // status@broadcast to handleStatusMessage before reaching that filter.
+      if (remoteJid === "status@broadcast") {
+        if (msg.message && msg.key?.remoteJid) {
+          fireAsync("handleStatusMessage", () => handleStatusMessage(sock, msg));
+        }
+        continue;
+      }
+
       // ── fromMe filter ────────────────────────────────────────────────────
       if (msg.key?.fromMe) {
         const isGroupJid = remoteJid.endsWith("@g.us");
         const isSelfChat = !!botNumber && remoteNumber === botNumber;
 
         // ── FIX: owner DM detection without LID dependency ────────────────
-        // When the owner sends a command, Baileys delivers it with fromMe=true
-        // and remoteJid = owner's @lid JID. The LID number has no relation to
-        // the phone number so comparing them always fails.
-        //
-        // Strategy 1: try resolving @lid → real JID via contacts.upsert map
-        // Strategy 2: if still @lid (mapping not yet arrived), allow it through
-        //             anyway — a fromMe DM that isn't a self-chat can only be
-        //             from the owner's phone since only the owner's number is
-        //             paired to this bot session.
         const resolvedRemote = remoteJid.endsWith("@lid") ? resolveLid(remoteJid) : remoteJid;
         const resolvedNumber = resolvedRemote.split(":")[0].split("@")[0];
         const resolvedIsOwner = !!ownerNumber && resolvedNumber === ownerNumber;
-
-        // Still a @lid after resolution means the mapping hasn't arrived yet.
-        // A fromMe non-group non-selfchat DM can only originate from the paired
-        // owner device — pass it through.
         const isUnresolvedLid = resolvedRemote.endsWith("@lid");
         const isOwnerDM = resolvedIsOwner || isUnresolvedLid;
 
@@ -357,11 +355,6 @@ async function connectBot(sessionAuth: {
 
       const jid = msg.key.remoteJid!;
       logger.info({ jid, jidType: jid.split("@")[1] ?? "unknown", fromMe: msg.key.fromMe }, "➡️ Dispatching message");
-
-      if (jid === "status@broadcast") {
-        fireAsync("handleStatusMessage", () => handleStatusMessage(sock, msg));
-        continue;
-      }
 
       cacheMessage(msg);
 
