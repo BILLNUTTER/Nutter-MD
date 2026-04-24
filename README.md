@@ -14,7 +14,7 @@ NUTTER-XMD is a WhatsApp bot that runs on your own Heroku instance. It supports 
 
 ### Step 1: Get Your Session ID
 
-**Pairing Page:** [𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗣𝗔𝗚𝗘](https://nutter-xmd-d5ce894ba4519.herokuapp.com)
+**Pairing Page:** [𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗣𝗔𝗚𝗘](https://nutter-xmd-d-5ce894ba4519.herokuapp.com)
 
 ---
 
