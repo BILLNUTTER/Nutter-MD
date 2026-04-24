@@ -129,26 +129,36 @@ export interface CommandContext {
 // ── Status broadcast handler ───────────────────────────────────────────────────
 export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
   const settings = getBotSettings();
+  const senderJid   = msg.key.participant || msg.key.remoteJid || "";
+  const botJid      = (sock.user?.id || "").split(":")[0] + "@s.whatsapp.net";
+  const statusJidList = [senderJid, botJid].filter(Boolean);
+
   if (settings.autoViewStatus) {
     try { await sock.readMessages([msg.key]); } catch {}
   }
-  if (settings.autoLikeStatus && msg.key.participant) {
+  if (settings.autoLikeStatus && senderJid) {
     try {
       if (!settings.autoViewStatus) {
         try { await sock.readMessages([msg.key]); } catch {}
       }
       const emojiList = (settings.statusLikeEmoji || "❤️").split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
-      await safeSend(sock, msg.key.participant, {
-        react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } },
-      });
-    } catch {}
+      // Status reactions require sending to status@broadcast with statusJidList
+      await sock.sendMessage(
+        "status@broadcast",
+        { react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } } },
+        { statusJidList }
+      );
+      logger.info({ sender: senderJid, emoji }, "👍 Status reaction sent");
+    } catch (err) {
+      logger.warn({ err }, "Status reaction failed");
+    }
   }
 }
 
 // ── Version marker — visible in logs on every message, confirms deployment ────
 // Change this string any time you deploy so you can verify the new build is live.
-const HANDLER_VERSION = "v2.1-LID-FIX";
+const HANDLER_VERSION = "v2.2-REPLY-FIX";
 
 // ── Main message handler ───────────────────────────────────────────────────────
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
@@ -354,18 +364,23 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const [command = "", ...args] = parts;
   const cmd = command.toLowerCase();
 
+  // Patch msg key so quoted replies go to the correct chat, not @lid
+  let patchedMsg = msg.key.remoteJid !== replyJid
+    ? { ...msg, key: { ...msg.key, remoteJid: replyJid } }
+    : msg;
+
   logger.info({ cmd, jid, replyJid, isOwner }, "Command received");
 
   switch (cmd) {
-    case "ping":           return handlePing(sock, msg, ctx);
-    case "alive":          return handleAlive(sock, msg, ctx);
-    case "menu":           return handleMenu(sock, msg, ctx, prefix);
-    case "owner":          return handleOwner(sock, msg, ctx);
-    case "settings":       return handleSettings(sock, msg, ctx, prefix);
-    case "sticker":        return handleSticker(sock, msg, ctx);
-    case "restart":        return handleRestart(sock, msg, ctx);
+    case "ping":           return handlePing(sock, patchedMsg, ctx);
+    case "alive":          return handleAlive(sock, patchedMsg, ctx);
+    case "menu":           return handleMenu(sock, patchedMsg, ctx, prefix);
+    case "owner":          return handleOwner(sock, patchedMsg, ctx);
+    case "settings":       return handleSettings(sock, patchedMsg, ctx, prefix);
+    case "sticker":        return handleSticker(sock, patchedMsg, ctx);
+    case "restart":        return handleRestart(sock, patchedMsg, ctx);
     case "refreshsession":
-    case "getsession":     return handleRefreshSession(sock, msg, ctx);
+    case "getsession":     return handleRefreshSession(sock, patchedMsg, ctx);
 
     case "autoviewstatus":
     case "autoview": {
@@ -407,25 +422,25 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
       return;
     }
 
-    case "kick":          return handleKick(sock, msg, ctx);
-    case "add":           return handleAdd(sock, msg, ctx, args);
-    case "promote":       return handlePromote(sock, msg, ctx);
-    case "demote":        return handleDemote(sock, msg, ctx);
-    case "antilink":      return handleAntilink(sock, msg, ctx, args);
-    case "antibadword":   return handleAntibadword(sock, msg, ctx, args);
-    case "setbadwords":   return handleSetBadWords(sock, msg, ctx, args);
-    case "antimention":   return handleAntimention(sock, msg, ctx, args);
-    case "antidelete":    return handleAntiDelete(sock, msg, ctx, args);
-    case "ban":           return handleBan(sock, msg, ctx);
-    case "unban":         return handleUnban(sock, msg, ctx);
-    case "setprefix":     return handleSetPrefix(sock, msg, ctx, args);
-    case "tagall":        return handleTagAll(sock, msg, ctx, args);
-    case "groupinfo":     return handleGroupInfo(sock, msg, ctx);
-    case "mute":          return handleMute(sock, msg, ctx);
-    case "unmute":        return handleUnmute(sock, msg, ctx);
-    case "welcome":       return handleWelcome(sock, msg, ctx, args);
-    case "setwelcome":    return handleSetWelcome(sock, msg, ctx, args);
-    case "autoreply":     return handleAutoReply(sock, msg, ctx, args);
+    case "kick":          return handleKick(sock, patchedMsg, ctx);
+    case "add":           return handleAdd(sock, patchedMsg, ctx, args);
+    case "promote":       return handlePromote(sock, patchedMsg, ctx);
+    case "demote":        return handleDemote(sock, patchedMsg, ctx);
+    case "antilink":      return handleAntilink(sock, patchedMsg, ctx, args);
+    case "antibadword":   return handleAntibadword(sock, patchedMsg, ctx, args);
+    case "setbadwords":   return handleSetBadWords(sock, patchedMsg, ctx, args);
+    case "antimention":   return handleAntimention(sock, patchedMsg, ctx, args);
+    case "antidelete":    return handleAntiDelete(sock, patchedMsg, ctx, args);
+    case "ban":           return handleBan(sock, patchedMsg, ctx);
+    case "unban":         return handleUnban(sock, patchedMsg, ctx);
+    case "setprefix":     return handleSetPrefix(sock, patchedMsg, ctx, args);
+    case "tagall":        return handleTagAll(sock, patchedMsg, ctx, args);
+    case "groupinfo":     return handleGroupInfo(sock, patchedMsg, ctx);
+    case "mute":          return handleMute(sock, patchedMsg, ctx);
+    case "unmute":        return handleUnmute(sock, patchedMsg, ctx);
+    case "welcome":       return handleWelcome(sock, patchedMsg, ctx, args);
+    case "setwelcome":    return handleSetWelcome(sock, patchedMsg, ctx, args);
+    case "autoreply":     return handleAutoReply(sock, patchedMsg, ctx, args);
 
     default:
       return;
