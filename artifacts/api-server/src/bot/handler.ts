@@ -173,7 +173,7 @@ export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessage
 
 // ── Version marker — visible in logs on every message, confirms deployment ────
 // Change this string any time you deploy so you can verify the new build is live.
-const HANDLER_VERSION = "v2.4-REPLY-FIX";
+const HANDLER_VERSION = "v2.3-OWNER-FIX";
 
 // ── Main message handler ───────────────────────────────────────────────────────
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
@@ -213,6 +213,15 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const botJidFull = sock.user?.id || "";
 
   // ── isOwner detection ─────────────────────────────────────────────────────
+  //
+  // Case 1: fromMe=true in a DM → owner by definition (only paired phone sends these)
+  //
+  // Case 2: incoming DM with @lid JID that still can't be resolved →
+  //   The LID→JID mapping arrives via contacts.upsert shortly after connect.
+  //   If it hasn't arrived yet, any unresolved @lid DM must be the owner
+  //   since only the owner's number is paired to this bot session.
+  //
+  // Case 3: resolved phone number matches OWNER_NUMBER (groups + resolved DMs)
   let isOwner = false;
   let senderJidRaw: string;
   let realSenderJid: string;
@@ -231,6 +240,12 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     senderNumber  = realSenderJid.split(":")[0].split("@")[0];
 
     const numberMatch = ownerNumber !== "" && senderNumber === ownerNumber;
+    // Case 2: unresolved @lid in an INCOMING DM (fromMe=false) — cannot assume owner.
+    // Only fromMe=true @lid DMs are guaranteed to be the owner (Case 1 above).
+    // For fromMe=false @lid we cannot know who it is until contacts.upsert fires.
+    // We do NOT set isOwner=true here — unknown senders are treated as regular users.
+    const isUnresolvedOwnerLid = false; // reserved for fromMe=true path (Case 1)
+
     isOwner = numberMatch;
     logger.info(
       { ownerNumber, senderNumber, senderJidRaw, realSenderJid, numberMatch, isOwner },
@@ -335,19 +350,32 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     return;
   }
 
-  // ── FIXED: Resolve reply JID ─────────────────────────────────────────────────
-  // ALWAYS reply to the chat where the message came from (jid)
-  // This ensures commands in DMs reply in the same DM, and group commands reply in the group
-  const replyJid = jid;  // ← THE FIX: use the original chat ID directly
-  
-  // Log the fix for debugging
-  logger.info({ 
-    originalJid: jid, 
-    replyJid, 
-    isGroup, 
-    fromMe: msg.key.fromMe,
-    isOwner 
-  }, "🔍 Reply target (FIXED: always using original jid)");
+  // ── Resolve reply JID ─────────────────────────────────────────────────────
+  // For DMs: never send to a @lid JID — it silently fails after the first delivery.
+  // Priority: fromMe → owner's real JID | resolved → real JID | still @lid → owner fallback
+  let replyJid: string;
+  if (isGroup) {
+    replyJid = jid;
+  } else if (msg.key.fromMe) {
+    replyJid = `${ownerNumber}@s.whatsapp.net`;
+  } else {
+    const resolved = resolveLid(jid);
+    if (resolved.endsWith("@lid")) {
+      if (isOwner) {
+        // Owner's LID not yet mapped — fall back to their real phone JID
+        replyJid = `${ownerNumber}@s.whatsapp.net`;
+        logger.info({ lid: jid, fallback: replyJid }, "🔀 Owner @lid unresolved — using owner JID as reply fallback");
+      } else {
+        // Unknown user's @lid — reply directly to their LID JID.
+        // WhatsApp will route it correctly once the session is established.
+        replyJid = jid;
+        logger.info({ lid: jid }, "🔀 Unknown @lid — replying to LID directly");
+      }
+    } else {
+      replyJid = resolved;
+      if (replyJid !== jid) logger.info({ lid: jid, resolved: replyJid }, "🔀 @lid resolved for reply");
+    }
+  }
 
   const userSettings = getUserSettings(realSenderJid);
   if (userSettings?.isBanned && !isOwner) {
@@ -361,15 +389,12 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   const [command = "", ...args] = parts;
   const cmd = command.toLowerCase();
 
-  // No need to patch msg key since we're using the original jid
-  // But keep patchedMsg for compatibility with handlers that might expect it
-  let patchedMsg = msg;
-  // Only patch if replyJid is different (shouldn't happen now, but kept for safety)
-  if (msg.key.remoteJid !== replyJid) {
-    patchedMsg = { ...msg, key: { ...msg.key, remoteJid: replyJid } };
-  }
+  // Patch msg key so quoted replies go to the correct chat, not @lid
+  let patchedMsg = msg.key.remoteJid !== replyJid
+    ? { ...msg, key: { ...msg.key, remoteJid: replyJid } }
+    : msg;
 
-  logger.info({ cmd, jid: replyJid, isOwner, isGroup }, "📌 Command execution");
+  logger.info({ cmd, jid, replyJid, isOwner }, "Command received");
 
   switch (cmd) {
     case "ping":           return handlePing(sock, patchedMsg, ctx);
