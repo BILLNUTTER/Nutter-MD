@@ -127,38 +127,53 @@ export interface CommandContext {
 }
 
 // ── Status broadcast handler ───────────────────────────────────────────────────
+// Only processes statuses posted AFTER the bot connected (connectedAt guard is
+// applied in connection.ts via the stale-message filter). This function only
+// handles statuses that arrive as live notify events, never replayed history.
 export async function handleStatusMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
-  const settings = getBotSettings();
-  const senderJid   = msg.key.participant || msg.key.remoteJid || "";
-  const botJid      = (sock.user?.id || "").split(":")[0] + "@s.whatsapp.net";
-  const statusJidList = [senderJid, botJid].filter(Boolean);
+  const settings   = getBotSettings();
+  const senderJid  = msg.key.participant || "";
 
+  // Skip if no sender, or if sender IS status@broadcast (reaction notifications,
+  // senderKeyDistribution etc — not actual status posts we should react to)
+  if (!senderJid || senderJid === "status@broadcast") return;
+
+  const botJid = (sock.user?.id || "").split(":")[0].split("@")[0] + "@s.whatsapp.net";
+
+  // Auto-view: send read receipt so status shows as "seen"
   if (settings.autoViewStatus) {
-    try { await sock.readMessages([msg.key]); } catch {}
-  }
-  if (settings.autoLikeStatus && senderJid) {
     try {
+      await sock.readMessages([msg.key]);
+      logger.info({ sender: senderJid }, "👁 Status viewed");
+    } catch { /* non-fatal */ }
+  }
+
+  // Auto-like: react with emoji — must use statusJidList targeting the sender
+  if (settings.autoLikeStatus) {
+    try {
+      // Ensure read first (WhatsApp requires view before react)
       if (!settings.autoViewStatus) {
         try { await sock.readMessages([msg.key]); } catch {}
       }
-      const emojiList = (settings.statusLikeEmoji || "❤️").split(",").map((e) => e.trim()).filter(Boolean);
+      const emojiList = (settings.statusLikeEmoji || "❤️")
+        .split(",").map((e) => e.trim()).filter(Boolean);
       const emoji = emojiList[Math.floor(Math.random() * emojiList.length)] || "❤️";
-      // Status reactions require sending to status@broadcast with statusJidList
+
       await sock.sendMessage(
         "status@broadcast",
         { react: { text: emoji, key: { ...msg.key, remoteJid: "status@broadcast" } } },
-        { statusJidList }
+        { statusJidList: [senderJid, botJid] }
       );
       logger.info({ sender: senderJid, emoji }, "👍 Status reaction sent");
     } catch (err) {
-      logger.warn({ err }, "Status reaction failed");
+      logger.warn({ err }, "Status reaction failed (non-fatal)");
     }
   }
 }
 
 // ── Version marker — visible in logs on every message, confirms deployment ────
 // Change this string any time you deploy so you can verify the new build is live.
-const HANDLER_VERSION = "v2.2-REPLY-FIX";
+const HANDLER_VERSION = "v2.3-OWNER-FIX";
 
 // ── Main message handler ───────────────────────────────────────────────────────
 export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) {
@@ -225,12 +240,15 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
     senderNumber  = realSenderJid.split(":")[0].split("@")[0];
 
     const numberMatch = ownerNumber !== "" && senderNumber === ownerNumber;
-    // Case 2: unresolved @lid in a DM = owner
-    const isUnresolvedOwnerLid = !isGroup && jid.endsWith("@lid") && realSenderJid.endsWith("@lid");
+    // Case 2: unresolved @lid in an INCOMING DM (fromMe=false) — cannot assume owner.
+    // Only fromMe=true @lid DMs are guaranteed to be the owner (Case 1 above).
+    // For fromMe=false @lid we cannot know who it is until contacts.upsert fires.
+    // We do NOT set isOwner=true here — unknown senders are treated as regular users.
+    const isUnresolvedOwnerLid = false; // reserved for fromMe=true path (Case 1)
 
-    isOwner = numberMatch || isUnresolvedOwnerLid;
+    isOwner = numberMatch;
     logger.info(
-      { ownerNumber, senderNumber, senderJidRaw, realSenderJid, numberMatch, isUnresolvedOwnerLid, isOwner },
+      { ownerNumber, senderNumber, senderJidRaw, realSenderJid, numberMatch, isOwner },
       "🔑 Owner resolution"
     );
   }
@@ -343,9 +361,16 @@ export async function handleMessage(sock: WASocket, msg: proto.IWebMessageInfo) 
   } else {
     const resolved = resolveLid(jid);
     if (resolved.endsWith("@lid")) {
-      // LID not yet mapped — this must be the owner, use their real JID
-      replyJid = `${ownerNumber}@s.whatsapp.net`;
-      logger.info({ lid: jid, fallback: replyJid }, "🔀 @lid unresolved — using owner JID as reply fallback");
+      if (isOwner) {
+        // Owner's LID not yet mapped — fall back to their real phone JID
+        replyJid = `${ownerNumber}@s.whatsapp.net`;
+        logger.info({ lid: jid, fallback: replyJid }, "🔀 Owner @lid unresolved — using owner JID as reply fallback");
+      } else {
+        // Unknown user's @lid — reply directly to their LID JID.
+        // WhatsApp will route it correctly once the session is established.
+        replyJid = jid;
+        logger.info({ lid: jid }, "🔀 Unknown @lid — replying to LID directly");
+      }
     } else {
       replyJid = resolved;
       if (replyJid !== jid) logger.info({ lid: jid, resolved: replyJid }, "🔀 @lid resolved for reply");
